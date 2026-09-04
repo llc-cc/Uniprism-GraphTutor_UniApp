@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   getLocalProblemDrafts,
@@ -16,6 +16,7 @@ import { resolveCustomNavigationTop } from '../../utils/layout'
 import PrismWorkspace from '../../components/geometry/PrismWorkspace.vue'
 import IllustratedSolution from '../../components/solver/IllustratedSolution.vue'
 import { PRISM_2023A_QUESTION, PRISM_2023A_STEPS } from '../../data/prism-2023a'
+import MiniFormulaKeyboard from './components/MiniFormulaKeyboard.vue'
 
 type PageMode = 'steps' | 'diagram'
 type DiagramKind =
@@ -81,9 +82,22 @@ interface PageQuery {
 
 interface FollowUpExchange {
   id: number
+  stepIndex: number
   question: string
   answer: string
   context: string
+}
+
+interface FormulaInsertPayload {
+  value: string
+  cursorBack?: number
+}
+
+interface FollowUpInputEvent {
+  detail?: {
+    value?: string
+    cursor?: number
+  }
 }
 
 const step = (
@@ -190,7 +204,7 @@ const PHYSICS_INCLINE: SolverTemplate = {
   subject: 'physics',
   kind: 'physics-incline',
   defaultTitle: '粗糙斜面 · 静止',
-  statement: '质量为 m 的物块静止在倾角 θ = 30° 的粗糙斜面上。画出受力图，并判断静摩擦力方向。',
+  statement: '质量为 m 的物块静止在倾角 θ=30° 的粗糙斜面上。画出物块的受力图，并判断静摩擦力方向。',
   diagramTitle: '斜面受力图',
   recommendedView: '正视',
   objects: [
@@ -201,10 +215,10 @@ const PHYSICS_INCLINE: SolverTemplate = {
     object('friction', '静摩擦力', 'f', 3, '它沿斜面向上，阻碍物块向下滑动的趋势。'),
   ],
   steps: [
-    step('明确研究对象', '物块静止在粗糙斜面上。', '把物块单独隔离，保留斜面的真实姿态与接触关系。', '隔离物块并保留接触面。', '物块处于静止状态，所受合力为零。', '“静止”同时意味着沿斜面和垂直斜面两个方向的加速度都为零。', '先建立斜面与物块场景。', 'block'),
-    step('标出重力', '重力由地球施加，作用于物块重心。', '重力方向始终竖直向下，不会随斜面方向改变。', '从重心竖直向下画 G。', '画出 G=mg，并准备沿斜面分解。', '沿斜面分量为 mg sinθ，垂直斜面分量为 mg cosθ。', '红色重力箭头保持竖直向下。', 'gravity'),
-    step('标出支持力', '斜面对物块有弹性支持作用。', '支持力垂直接触面，并指向离开斜面的一侧。', '垂直斜面向外画 N。', '垂直斜面平衡：N=mg cosθ。', '支持力不是重力的反作用力；两者施力物体不同。', '蓝色支持力与斜面垂直。', 'normal'),
-    step('判断摩擦方向', '若没有摩擦，物块有沿斜面下滑的趋势。', '静摩擦力阻碍相对运动趋势，因此沿斜面向上。', '根据运动趋势反向画 f。', '沿斜面平衡：f=mg sinθ，方向向上。', '只有恰好达到临界静摩擦时才可写 f=μN，普通静止状态不能直接等号。', '补上绿色静摩擦力后，两个方向都满足平衡。', 'friction'),
+    step('画出斜面与物块', '物块静止在 30° 粗糙斜面上。', '保留斜面和物块的真实姿态，先明确研究对象与接触关系。', '画出斜面与物块。', '物块处于静止状态。', '物块随斜面转动，但重力方向不会随斜面转动。', '物块静止在 30° 粗糙斜面上；物块随斜面转动，但重力方向不会随斜面转动。', 'block'),
+    step('添加重力', '重力由地球施加，作用于质心。', '从物块质心沿竖直方向向下画出重力。', '重力竖直向下。', 'G=mg。', '重力方向由重力场决定，与接触面的倾斜方向无关。', '重力由地球施加，作用于质心，方向始终竖直向下。', 'gravity'),
+    step('添加支持力', '支持力来自斜面对物块的接触作用。', '从接触位置沿斜面法线向外画出支持力。', '支持力垂直斜面向外。', 'FN=mg cos θ。', '垂直斜面方向合力为零。', '支持力垂直斜面向外，大小为 mg cos θ。', 'normal'),
+    step('添加静摩擦力', '物块有沿斜面下滑的趋势。', '静摩擦力阻碍相对运动趋势，因此沿斜面向上。', '静摩擦力沿斜面向上。', 'Ff=mg sin θ。', '沿斜面方向合力为零，三个力共同维持平衡。', '物块有沿斜面下滑的趋势，所以静摩擦力沿斜面向上，大小为 mg sin θ。', 'friction'),
   ],
 }
 
@@ -235,20 +249,19 @@ const CHEMISTRY_MOLECULE: SolverTemplate = {
   subject: 'chemistry',
   kind: 'chemistry-molecule',
   defaultTitle: '乙醇的结构与催化氧化',
-  statement: '从 CH₃CH₂OH 的原子连接识别羟基，并追踪乙醇催化氧化时的成键变化。',
+  statement: '写出乙醇的结构式，指出其官能团；并画出它被氧化为乙醛后的结构，标明碳氧双键。',
   diagramTitle: '乙醇结构变化图',
   recommendedView: '等轴测',
   objects: [
-    object('carbon-chain', '碳链骨架', 'C−C', 0, '两个碳原子以单键相连，构成乙醇的碳链骨架。'),
-    object('bonds', '共价键', 'σ', 1, '结构式中的短线表示原子间共享电子形成的共价键。'),
-    object('hydroxyl', '羟基', '−OH', 2, '羟基是乙醇的特征官能团，决定许多典型化学性质。'),
-    object('oxidation', '氧化变化', '−CH₂OH → −CHO', 3, '催化氧化可看作羟基所在碳上失去氢并形成羰基。'),
+    object('carbon-chain', '碳链骨架', 'C−C', 0, '两个碳原子以单键相连，端碳连接羟基。'),
+    object('bonds', '共价键', 'σ', 0, '碳满足四键、氧满足两键；楔形键表达碳的四面体构型。'),
+    object('hydroxyl', '羟基', '−OH', 1, '羟基是乙醇的官能团，氧上的孤对电子使其能够形成氢键。'),
+    object('oxidation', '氧化变化', 'C−O → C=O', 2, '催化氧化移去两个氢，并把 C−O 单键变为碳氧双键。'),
   ],
   steps: [
-    step('读取碳链骨架', '分子式写作 CH₃CH₂OH。', '按 C−C−O−H 的顺序排列重原子，再补足各原子的价键。', '先连接 C−C−O−H。', '得到两碳链与末端含氧基团。', '碳通常形成 4 个价键，氧通常形成 2 个价键，可用于检查结构。', '先显示两个碳原子、氧原子和末端氢。', 'carbon-chain'),
-    step('核对原子连接', '乙醇中所有重原子以单键连接。', '补入 C−C、C−O 和 O−H 键，并确认各原子的成键数合理。', '补全单键并检查价键。', '结构简式为 CH₃−CH₂−OH。', '这里的 OH 与碳相连，是羟基；不能把它拆成游离的 OH⁻。', '键线逐步连接各原子。', 'bonds'),
-    step('识别羟基', '与饱和碳相连的 −OH 是醇羟基。', '把 C−O−H 作为一个官能团整体观察，羟基附近是反应活性位置。', '圈出末端 −OH。', '官能团是羟基，物质属于醇。', '羟基能形成氢键，也使乙醇可发生氧化、酯化等反应。', '淡黄色光圈突出羟基。', 'hydroxyl'),
-    step('追踪催化氧化', '羟基所在碳上仍连有氢，可被氧化。', '该碳与氧形成更高键级，同时移去相邻氢，产物骨架对应乙醛。', '跟踪 −CH₂OH 到 −CHO。', '乙醇可催化氧化为乙醛。', '完整配平还需同时满足 C、H、O 原子守恒；图解只强调官能团变化。', '反应箭头连接反应物结构与官能团变化。', 'oxidation'),
+    step('写出乙醇结构式', '碳骨架 C—C，端碳连羟基。', '先连接 C—C—O—H，再根据碳四键、氧两键补足氢原子。', '完成乙醇结构。', 'CH₃CH₂OH。', '两根楔形键分别指向读者与背离读者，表达碳的四面体构型。', '碳骨架 C—C，端碳连羟基。两根用楔形画的键表示它们分别指向读者与背离读者——碳的四面体构型不是画在纸面上的十字。', 'bonds'),
+    step('标出官能团', '末端的 —OH 是乙醇的官能团。', '圈出 O—H，并标出氧原子上的两对孤对电子。', '识别羟基。', '官能团为羟基 —OH。', '氧上的两对孤对电子是乙醇能形成氢键的原因。', '羟基 —OH 是乙醇的官能团，决定了它的化学性质。氧上两对孤对电子是它能形成氢键的原因。', 'hydroxyl'),
+    step('氧化为乙醛', '催化氧化脱去羟基上的氢与相邻碳上的一个氢。', '移去两个氢，并把 C—O 单键改为 C=O 双键。', '形成碳氧双键。', 'CH₃CH₂OH → CH₃CHO。', '产物含醛基 —CHO，名称为乙醛。', '催化氧化脱去羟基上的氢与碳上的一个氢，C—O 单键变为碳氧双键。双键在这里只是同一根键的 order 从 1 变成 2。', 'oxidation'),
   ],
 }
 
@@ -383,12 +396,12 @@ const SUBJECT_META: Record<ProblemSubject, { label: string; eyebrow: string }> =
 
 const ILLUSTRATED_ARTICLES = {
   'physics-incline-force': {
-    overview: '先隔离研究对象，再按重力、支持力和静摩擦力的顺序作图；最后分别沿斜面和垂直斜面方向检查平衡条件。',
-    answer: '物块受到竖直向下的重力、垂直斜面向外的支持力，以及沿斜面向上的静摩擦力。静止时满足 N = mg cosθ、f = mg sinθ。',
+    overview: '先保留斜面和物块的真实姿态，再依次叠加重力、支持力和静摩擦力。',
+    answer: '静摩擦力沿斜面向上；FN=mg cos 30°，Ff=mg sin 30°，物块受力平衡。',
   },
   'chemistry-ethanol-oxidation': {
-    overview: '先由碳、氧的价键数还原 C−C−O−H 骨架，再圈出羟基，最后追踪羟基所在碳在催化氧化过程中的成键变化。',
-    answer: '乙醇的结构简式为 CH₃CH₂OH，官能团是羟基；催化氧化时羟基所在碳形成羰基，生成乙醛 CH₃CHO。',
+    overview: '先完成碳骨架与价键检查，再突出羟基，最后比较氧化前后的键级变化。',
+    answer: '乙醇含羟基 —OH；催化氧化后生成含醛基 —CHO 的乙醛。',
   },
 } as const
 
@@ -412,11 +425,17 @@ const isDraft = ref(false)
 const pendingImagePath = ref('')
 const followUpText = ref('')
 const followUpExchanges = ref<FollowUpExchange[]>([])
+const formulaKeyboardOpen = ref(false)
+const followUpSelectionStart = ref(0)
+const followUpSelectionEnd = ref(0)
+const followUpVoiceActive = ref(false)
+const followUpVoiceSeconds = ref(0)
 const scrollIntoViewId = ref('')
 const navigationTop = resolveCustomNavigationTop()
 const topBarStyle = { paddingTop: navigationTop }
 const contentScrollStyle = { top: `calc(${navigationTop} + 89rpx)` }
 let exchangeSequence = 0
+let followUpVoiceTimer: ReturnType<typeof setInterval> | undefined
 
 const safeDecode = (value: unknown): string => {
   if (typeof value !== 'string') return ''
@@ -561,6 +580,14 @@ const rootClasses = computed(() => ({
 const followUpContext = computed(() => (
   `第 ${activeStep.value + 1} 步 · ${selectedObject.value?.label ?? currentStep.value?.title ?? '当前内容'}`
 ))
+const currentFollowUpExchanges = computed(() => (
+  followUpExchanges.value.filter((exchange) => exchange.stepIndex === activeStep.value)
+))
+const formattedFollowUpVoiceTime = computed(() => {
+  const seconds = String(followUpVoiceSeconds.value % 60).padStart(2, '0')
+  const minutes = String(Math.floor(followUpVoiceSeconds.value / 60)).padStart(2, '0')
+  return `${minutes}:${seconds}`
+})
 const progressLabel = computed(() => (
   activeStep.value === activeTemplate.value.steps.length - 1
     ? '完整图解已显示'
@@ -612,6 +639,13 @@ const selectStep = (index: number, openDiagram = false) => {
   if (openDiagram) setMode('diagram')
 }
 
+const focusIllustratedFigure = () => {
+  scrollIntoViewId.value = ''
+  void nextTick(() => {
+    scrollIntoViewId.value = 'illustrated-figure'
+  })
+}
+
 const selectObject = (id: string) => {
   const target = activeTemplate.value.objects.find((item) => item.id === id)
   if (!target || target.firstStep > activeStep.value) return
@@ -641,7 +675,112 @@ const buildDemoAnswer = (): string => {
   return `在“${currentStep.value?.title ?? '当前步骤'}”中，${objectDescription}${stepDetail} 这是前端模板的演示说明；正式题目答案以后端求解结果为准。`
 }
 
+const clampFollowUpCursor = (cursor: number) => (
+  Math.max(0, Math.min(cursor, followUpText.value.length))
+)
+
+const setFollowUpSelection = (start: number, end = start) => {
+  followUpSelectionStart.value = clampFollowUpCursor(start)
+  followUpSelectionEnd.value = clampFollowUpCursor(end)
+}
+
+const onFollowUpInput = (event: FollowUpInputEvent) => {
+  const value = typeof event.detail?.value === 'string' ? event.detail.value : ''
+  followUpText.value = value
+  const cursor = typeof event.detail?.cursor === 'number' ? event.detail.cursor : value.length
+  setFollowUpSelection(cursor)
+}
+
+const rememberFollowUpCursor = (event: FollowUpInputEvent) => {
+  const cursor = event.detail?.cursor
+  if (typeof cursor === 'number') setFollowUpSelection(cursor)
+}
+
+const replaceFollowUpSelection = (value: string, cursorBack = 0) => {
+  const start = Math.min(followUpSelectionStart.value, followUpSelectionEnd.value)
+  const end = Math.max(followUpSelectionStart.value, followUpSelectionEnd.value)
+  const nextText = `${followUpText.value.slice(0, start)}${value}${followUpText.value.slice(end)}`
+  followUpText.value = nextText
+  setFollowUpSelection(start + value.length - cursorBack)
+}
+
+const insertFormulaKey = (key: FormulaInsertPayload) => {
+  replaceFollowUpSelection(key.value, key.cursorBack ?? 0)
+}
+
+const moveFormulaCursor = (offset: number) => {
+  const start = Math.min(followUpSelectionStart.value, followUpSelectionEnd.value)
+  const end = Math.max(followUpSelectionStart.value, followUpSelectionEnd.value)
+  if (start !== end) {
+    setFollowUpSelection(offset < 0 ? start : end)
+    return
+  }
+  setFollowUpSelection(end + offset)
+}
+
+const backspaceFormula = () => {
+  const start = Math.min(followUpSelectionStart.value, followUpSelectionEnd.value)
+  const end = Math.max(followUpSelectionStart.value, followUpSelectionEnd.value)
+  if (start !== end) {
+    replaceFollowUpSelection('')
+    return
+  }
+  if (start === 0) return
+  followUpText.value = `${followUpText.value.slice(0, start - 1)}${followUpText.value.slice(end)}`
+  setFollowUpSelection(start - 1)
+}
+
+const closeFormulaKeyboard = () => {
+  formulaKeyboardOpen.value = false
+  scrollIntoViewId.value = ''
+}
+
+const toggleFormulaKeyboard = () => {
+  formulaKeyboardOpen.value = !formulaKeyboardOpen.value
+  if (formulaKeyboardOpen.value && followUpSelectionEnd.value > followUpText.value.length) {
+    setFollowUpSelection(followUpText.value.length)
+  }
+  if (formulaKeyboardOpen.value) {
+    scrollIntoViewId.value = ''
+    void nextTick(() => {
+      scrollIntoViewId.value = 'article-follow-up-composer'
+    })
+  } else {
+    scrollIntoViewId.value = ''
+  }
+  if (formulaKeyboardOpen.value && followUpVoiceActive.value) {
+    followUpVoiceActive.value = false
+    if (followUpVoiceTimer) clearInterval(followUpVoiceTimer)
+    followUpVoiceTimer = undefined
+  }
+}
+
+const stopFollowUpVoice = (appendDemoQuestion = true) => {
+  if (followUpVoiceTimer) clearInterval(followUpVoiceTimer)
+  followUpVoiceTimer = undefined
+  followUpVoiceActive.value = false
+  if (appendDemoQuestion && !followUpText.value.trim()) {
+    followUpText.value = `为什么“${currentStep.value?.title ?? '当前步骤'}”可以这样处理？`
+    setFollowUpSelection(followUpText.value.length)
+  }
+}
+
+const toggleFollowUpVoice = () => {
+  if (followUpVoiceActive.value) {
+    stopFollowUpVoice()
+    return
+  }
+  formulaKeyboardOpen.value = false
+  followUpVoiceSeconds.value = 0
+  followUpVoiceActive.value = true
+  followUpVoiceTimer = setInterval(() => {
+    followUpVoiceSeconds.value += 1
+    if (followUpVoiceSeconds.value >= 15) stopFollowUpVoice()
+  }, 1000)
+}
+
 const submitFollowUp = (preset?: string) => {
+  if (followUpVoiceActive.value) stopFollowUpVoice(false)
   const question = (preset ?? followUpText.value).trim()
   if (!question) {
     uni.showToast({ title: '先输入一个问题', icon: 'none' })
@@ -650,15 +789,22 @@ const submitFollowUp = (preset?: string) => {
   const id = ++exchangeSequence
   followUpExchanges.value.push({
     id,
+    stepIndex: activeStep.value,
     question,
     answer: buildDemoAnswer(),
     context: followUpContext.value,
   })
   followUpText.value = ''
+  setFollowUpSelection(0)
+  formulaKeyboardOpen.value = false
   void nextTick(() => {
     scrollIntoViewId.value = `follow-up-${id}`
   })
 }
+
+onUnmounted(() => {
+  if (followUpVoiceTimer) clearInterval(followUpVoiceTimer)
+})
 
 const goBack = () => {
   uni.navigateBack({
@@ -738,6 +884,7 @@ const goBack = () => {
           :steps="activeTemplate.steps"
           :step-index="activeStep"
           @update:step-index="selectStep($event)"
+          @focus-figure="focusIllustratedFigure"
         />
 
         <view v-if="!isArticleWorkspace" class="preference-summary">
@@ -1212,29 +1359,88 @@ const goBack = () => {
           </view>
         </view>
 
-        <view v-if="!isArticleWorkspace" class="follow-up-section">
-          <view class="section-heading section-heading--compact">
-            <view>
-              <text class="section-heading__eyebrow">FOLLOW UP</text>
-              <text class="section-heading__title">针对这一步继续追问</text>
-            </view>
-            <text class="follow-up-section__context">{{ followUpContext }}</text>
+        <view :class="['follow-up-section', { 'follow-up-section--article': isArticleWorkspace }]">
+          <view class="tutor-thread__heading">
+            <text class="tutor-thread__title">步骤答疑</text>
+            <text class="tutor-thread__current">当前步骤：{{ currentStep.title }}</text>
+            <text v-if="!isArticleWorkspace" class="follow-up-section__context">{{ followUpContext }}</text>
           </view>
-          <scroll-view class="preset-strip" scroll-x :show-scrollbar="false">
+          <scroll-view v-if="!isArticleWorkspace" class="preset-strip" scroll-x :show-scrollbar="false">
             <view class="preset-strip__inner">
               <button v-for="question in presetQuestions" :key="question" class="preset-question" @tap="submitFollowUp(question)">{{ question }}</button>
             </view>
           </scroll-view>
-          <view v-if="followUpExchanges.length === 0" class="follow-up-empty">
+          <view v-if="currentFollowUpExchanges.length === 0" class="follow-up-empty" :class="{ 'follow-up-empty--article': isArticleWorkspace }">
             <view class="follow-up-empty__mark">?</view>
-            <text>可以询问当前步骤或刚刚点选的对象。回复仅用于演示上下文联动。</text>
+            <text>{{ isArticleWorkspace ? '围绕这一页的题意、图形关系或解题步骤继续提问。' : '可以询问当前步骤或刚刚点选的对象。回复仅用于演示上下文联动。' }}</text>
           </view>
-          <view v-for="exchange in followUpExchanges" :id="`follow-up-${exchange.id}`" :key="exchange.id" class="exchange">
+          <view v-for="exchange in currentFollowUpExchanges" :id="`follow-up-${exchange.id}`" :key="exchange.id" class="exchange">
             <view class="exchange__question"><text class="exchange__role">你</text><text class="exchange__text">{{ exchange.question }}</text></view>
             <view class="exchange__answer">
               <view class="exchange__answer-header"><text class="exchange__role exchange__role--assistant">棱镜</text><text class="exchange__demo-badge">演示说明</text><text class="exchange__context">{{ exchange.context }}</text></view>
               <text class="exchange__text exchange__text--answer">{{ exchange.answer }}</text>
             </view>
+          </view>
+
+          <view v-if="isArticleWorkspace" id="article-follow-up-composer" class="article-composer-wrap">
+            <view v-if="followUpVoiceActive" class="follow-up-voice-state">
+              <view class="follow-up-voice-state__pulse" />
+              <view class="follow-up-voice-state__copy">
+                <text class="follow-up-voice-state__title">正在聆听你的问题</text>
+                <text class="follow-up-voice-state__time">语音演示 · {{ formattedFollowUpVoiceTime }}</text>
+              </view>
+              <button class="follow-up-voice-state__done" @tap="stopFollowUpVoice()">完成</button>
+            </view>
+
+            <view class="article-composer">
+              <input
+                :value="followUpText"
+                class="article-composer__input"
+                confirm-type="send"
+                maxlength="4000"
+                :adjust-position="true"
+                :cursor-spacing="24"
+                :selection-start="followUpSelectionStart"
+                :selection-end="followUpSelectionEnd"
+                placeholder="就当前图解提问…"
+                placeholder-class="article-composer__placeholder"
+                @input="onFollowUpInput"
+                @focus="rememberFollowUpCursor"
+                @blur="rememberFollowUpCursor"
+                @confirm="submitFollowUp()"
+              >
+              <button
+                :class="['article-composer__tool', { 'article-composer__tool--active': formulaKeyboardOpen }]"
+                aria-label="打开数学公式键盘"
+                @tap="toggleFormulaKeyboard"
+              >
+                <view class="formula-keyboard-glyph" />
+              </button>
+              <button
+                :class="['article-composer__tool', { 'article-composer__tool--active': followUpVoiceActive }]"
+                aria-label="语音输入"
+                @tap="toggleFollowUpVoice"
+              >
+                <view class="microphone-glyph">
+                  <view class="microphone-glyph__body" />
+                  <view class="microphone-glyph__stand" />
+                </view>
+              </button>
+              <button
+                :class="['article-composer__send', { 'article-composer__send--disabled': !followUpText.trim() }]"
+                :disabled="!followUpText.trim()"
+                aria-label="发送问题"
+                @tap="submitFollowUp()"
+              >↑</button>
+            </view>
+
+            <MiniFormulaKeyboard
+              v-if="formulaKeyboardOpen"
+              @insert="insertFormulaKey"
+              @move="moveFormulaCursor"
+              @backspace="backspaceFormula"
+              @done="closeFormulaKeyboard"
+            />
           </view>
         </view>
       </view>
@@ -2020,6 +2226,33 @@ const goBack = () => {
 .diagram-actions__button--primary { flex: 1; color: #fff; background: #3974e8; box-shadow: 0 8rpx 18rpx rgba(57, 116, 232, 0.19); }
 
 .follow-up-section { margin-top: 40rpx; padding-top: 30rpx; border-top: 1rpx solid #e1e6ec; }
+.follow-up-section--article {
+  margin-top: 52rpx;
+  padding: 40rpx 0 12rpx;
+  border-top: 0;
+}
+.tutor-thread__heading {
+  position: relative;
+}
+.tutor-thread__title {
+  display: block;
+  color: #27364b;
+  font-size: 36rpx;
+  font-weight: 750;
+  line-height: 1.4;
+}
+.tutor-thread__current {
+  display: block;
+  margin-top: 12rpx;
+  color: #657286;
+  font-size: 25rpx;
+  line-height: 1.65;
+}
+.tutor-thread__heading .follow-up-section__context {
+  position: absolute;
+  top: 2rpx;
+  right: 0;
+}
 .section-heading--compact { align-items: center; margin-bottom: 18rpx; }
 .section-heading--compact .section-heading__title { font-family: inherit; font-size: 30rpx; font-weight: 740; }
 .follow-up-section__context { max-width: 240rpx; padding: 8rpx 13rpx; overflow: hidden; color: #356dbf; font-size: 19rpx; text-overflow: ellipsis; white-space: nowrap; border-radius: 999rpx; background: #eaf3ff; }
@@ -2039,6 +2272,20 @@ const goBack = () => {
 }
 
 .follow-up-empty__mark { flex: 0 0 42rpx; width: 42rpx; height: 42rpx; margin-right: 16rpx; color: #3974e8; font-size: 23rpx; font-weight: 750; line-height: 42rpx; text-align: center; border-radius: 50%; background: #eaf3ff; }
+.follow-up-empty--article {
+  display: block;
+  margin-top: 26rpx;
+  padding: 0;
+  color: #68768a;
+  font-size: 28rpx;
+  line-height: 1.75;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.follow-up-empty--article .follow-up-empty__mark {
+  display: none;
+}
 .exchange { margin-top: 16rpx; }
 .exchange__question, .exchange__answer { display: flex; align-items: flex-start; padding: 18rpx 20rpx; border-radius: 20rpx; }
 .exchange__question { margin-left: 48rpx; color: #34536f; background: #eaf3ff; }
@@ -2050,6 +2297,211 @@ const goBack = () => {
 .exchange__context { flex: 1; margin-left: 10rpx; overflow: hidden; color: #909aaa; font-size: 18rpx; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .exchange__text { color: inherit; font-size: 23rpx; line-height: 1.62; }
 .exchange__text--answer { color: #485b70; }
+
+.article-composer-wrap {
+  margin-top: 34rpx;
+}
+
+.article-composer {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8rpx 8rpx 8rpx 22rpx;
+  border: 1rpx solid #d7dee7;
+  border-radius: 999rpx;
+  background: #ffffff;
+  box-shadow: 0 10rpx 34rpx rgba(34, 48, 69, 0.08);
+  box-sizing: border-box;
+}
+
+.article-composer__input {
+  flex: 1;
+  min-width: 0;
+  height: 72rpx;
+  padding: 0;
+  color: #26364a;
+  font-size: 27rpx;
+  font-weight: 500;
+  line-height: 72rpx;
+  background: transparent;
+}
+
+.article-composer__placeholder {
+  color: #929eae;
+}
+
+.article-composer__tool,
+.article-composer__send {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.article-composer__tool {
+  width: 62rpx;
+  height: 62rpx;
+  color: #657286;
+}
+
+.article-composer__tool--active {
+  color: #3974e8;
+  background: #edf4ff;
+}
+
+.article-composer__send {
+  width: 68rpx;
+  height: 68rpx;
+  margin-left: 4rpx;
+  color: #ffffff;
+  font-size: 42rpx;
+  font-weight: 550;
+  line-height: 66rpx;
+  background: #27364b;
+}
+
+.article-composer__send--disabled {
+  background: #9ca4af;
+  opacity: 1;
+}
+
+.article-composer__tool::after,
+.article-composer__send::after,
+.follow-up-voice-state__done::after {
+  border: 0;
+}
+
+.formula-keyboard-glyph {
+  position: relative;
+  width: 29rpx;
+  height: 23rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 5rpx;
+  box-sizing: border-box;
+}
+
+.formula-keyboard-glyph::before {
+  position: absolute;
+  top: 4rpx;
+  left: 4rpx;
+  width: 3rpx;
+  height: 3rpx;
+  border-radius: 1rpx;
+  background: currentColor;
+  box-shadow: 6rpx 0 currentColor, 12rpx 0 currentColor, 18rpx 0 currentColor;
+  content: '';
+}
+
+.formula-keyboard-glyph::after {
+  position: absolute;
+  right: 4rpx;
+  bottom: 4rpx;
+  left: 4rpx;
+  height: 3rpx;
+  border-radius: 2rpx;
+  background: currentColor;
+  content: '';
+}
+
+.microphone-glyph {
+  position: relative;
+  width: 28rpx;
+  height: 32rpx;
+}
+
+.microphone-glyph__body {
+  position: absolute;
+  top: 0;
+  left: 8rpx;
+  width: 12rpx;
+  height: 20rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 999rpx;
+  box-sizing: border-box;
+}
+
+.microphone-glyph__stand {
+  position: absolute;
+  top: 11rpx;
+  left: 4rpx;
+  width: 20rpx;
+  height: 14rpx;
+  border-right: 3rpx solid currentColor;
+  border-bottom: 3rpx solid currentColor;
+  border-left: 3rpx solid currentColor;
+  border-radius: 0 0 999rpx 999rpx;
+  box-sizing: border-box;
+}
+
+.microphone-glyph__stand::after {
+  position: absolute;
+  bottom: -9rpx;
+  left: 6rpx;
+  width: 3rpx;
+  height: 8rpx;
+  border-radius: 2rpx;
+  background: currentColor;
+  content: '';
+}
+
+.follow-up-voice-state {
+  display: flex;
+  align-items: center;
+  margin-bottom: 14rpx;
+  padding: 16rpx 18rpx;
+  border: 1rpx solid #d6e4f7;
+  border-radius: 18rpx;
+  background: #f4f8ff;
+}
+
+.follow-up-voice-state__pulse {
+  flex: 0 0 auto;
+  width: 18rpx;
+  height: 18rpx;
+  margin-right: 16rpx;
+  border: 5rpx solid #dceaff;
+  border-radius: 50%;
+  background: #3974e8;
+  animation: follow-up-pulse 900ms ease-in-out infinite alternate;
+}
+
+.follow-up-voice-state__copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.follow-up-voice-state__title {
+  color: #314c70;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.follow-up-voice-state__time {
+  margin-top: 3rpx;
+  color: #7b8da6;
+  font-size: 18rpx;
+}
+
+.follow-up-voice-state__done {
+  width: auto;
+  height: 48rpx;
+  margin: 0;
+  padding: 0 17rpx;
+  color: #356dbf;
+  font-size: 20rpx;
+  line-height: 48rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: #e5efff;
+}
 
 .follow-up-dock {
   position: fixed;
@@ -2104,6 +2556,11 @@ const goBack = () => {
 @keyframes diagram-enter {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes follow-up-pulse {
+  from { transform: scale(0.82); opacity: 0.68; }
+  to { transform: scale(1); opacity: 1; }
 }
 </style>
 
