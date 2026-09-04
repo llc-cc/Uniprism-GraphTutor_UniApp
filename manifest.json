@@ -1,0 +1,44 @@
+{
+  "name": "万有棱镜 GraphTutor",
+  "appid": "wx531ddd1f08193819",
+  "description": "把难题变成看得见的步骤",
+  "versionName": "0.1.0",
+  "versionCode": "10",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "modules": {},
+    "distribute": {
+      "android": {},
+      "ios": {},
+      "sdkConfigs": {}
+    }
+  },
+  "quickapp": {},
+  "mp-weixin": {
+    "appid": "wx531ddd1f08193819",
+    "libVersion": "3.16.2",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true,
+      "postcss": true
+    },
+    "usingComponents": true,
+    "optimization": {
+      "subPackages": true
+    }
+  },
+  "uniStatistics": {
+    "enable": false
+  },
+  "vueVersion": "3"
+}

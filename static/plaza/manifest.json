@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-09-04T03:22:34.001Z",
+  "assets": [
+    {
+      "id": "math-solid-geometry",
+      "fileName": "math-solid-geometry.webp",
+      "bytes": 38936,
+      "width": 1200,
+      "height": 751,
+      "overlay": true
+    },
+    {
+      "id": "physics-force-analysis",
+      "fileName": "physics-force-analysis.webp",
+      "bytes": 33786,
+      "width": 1200,
+      "height": 801,
+      "overlay": true
+    },
+    {
+      "id": "chemistry-ethanol",
+      "fileName": "chemistry-ethanol.webp",
+      "bytes": 19626,
+      "width": 1200,
+      "height": 800,
+      "overlay": false
+    },
+    {
+      "id": "math-functions",
+      "fileName": "math-functions.webp",
+      "bytes": 22722,
+      "width": 1200,
+      "height": 751,
+      "overlay": false
+    },
+    {
+      "id": "math-conic-sections",
+      "fileName": "math-conic-sections.webp",
+      "bytes": 33682,
+      "width": 1200,
+      "height": 751,
+      "overlay": false
+    },
+    {
+      "id": "physics-kinematics",
+      "fileName": "physics-kinematics.webp",
+      "bytes": 13852,
+      "width": 1200,
+      "height": 751,
+      "overlay": false
+    },
+    {
+      "id": "chemistry-equilibrium",
+      "fileName": "chemistry-equilibrium.webp",
+      "bytes": 45188,
+      "width": 1200,
+      "height": 800,
+      "overlay": false
+    },
+    {
+      "id": "worksheet-quadratic",
+      "fileName": "worksheet-quadratic.webp",
+      "bytes": 15670,
+      "width": 1200,
+      "height": 330,
+      "overlay": false
+    },
+    {
+      "id": "physics-electromagnetism",
+      "fileName": "physics-electromagnetism.webp",
+      "bytes": 17560,
+      "width": 1200,
+      "height": 751,
+      "overlay": false
+    }
+  ]
+}

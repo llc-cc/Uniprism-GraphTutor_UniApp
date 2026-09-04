@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="UniPrism">
+  <rect width="64" height="64" rx="14" fill="#17233c"/>
+  <path d="M4 30 H21" stroke="#f4f7fb" stroke-width="3" stroke-linecap="round"/>
+  <g stroke-width="3" stroke-linecap="round">
+    <path d="M40 32 L60 22" stroke="#ef7d4f"/>
+    <path d="M40 34 L60 34" stroke="#f2b134"/>
+    <path d="M40 36 L60 46" stroke="#5aa9e6"/>
+  </g>
+  <path d="M32 13 L52 47 H12 Z" fill="#ffffff" fill-opacity=".12" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+</svg>

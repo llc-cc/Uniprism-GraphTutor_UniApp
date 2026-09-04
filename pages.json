@@ -1,0 +1,97 @@
+{
+  "pages": [
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationStyle": "custom",
+        "backgroundColor": "#F7F8FA"
+      }
+    },
+    {
+      "path": "pages/records/index",
+      "style": {
+        "navigationStyle": "custom",
+        "backgroundColor": "#F7F8FA",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/plaza/index",
+      "style": {
+        "navigationStyle": "custom",
+        "backgroundColor": "#F7F8FA",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/me/index",
+      "style": {
+        "navigationStyle": "custom",
+        "backgroundColor": "#F7F8FA"
+      }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "subpackages/solver",
+      "name": "solver",
+      "pages": [
+        {
+          "path": "index",
+          "style": {
+            "navigationStyle": "custom",
+            "disableScroll": true,
+            "backgroundColor": "#F4F7FB"
+          }
+        }
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/home/index": {
+      "network": "all",
+      "packages": ["solver"]
+    }
+  },
+  "tabBar": {
+    "color": "#7C8798",
+    "selectedColor": "#3974E8",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页",
+        "iconPath": "static/tabbar/home.png",
+        "selectedIconPath": "static/tabbar/home-active.png"
+      },
+      {
+        "pagePath": "pages/records/index",
+        "text": "记录",
+        "iconPath": "static/tabbar/history.png",
+        "selectedIconPath": "static/tabbar/history-active.png"
+      },
+      {
+        "pagePath": "pages/plaza/index",
+        "text": "广场",
+        "iconPath": "static/tabbar/grid.png",
+        "selectedIconPath": "static/tabbar/grid-active.png"
+      },
+      {
+        "pagePath": "pages/me/index",
+        "text": "我的",
+        "iconPath": "static/tabbar/user.png",
+        "selectedIconPath": "static/tabbar/user-active.png"
+      }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "万有棱镜",
+    "navigationBarBackgroundColor": "#F7F8FA",
+    "backgroundColor": "#F7F8FA",
+    "backgroundTextStyle": "dark"
+  }
+}
