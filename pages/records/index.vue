@@ -4,10 +4,9 @@ import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import ProblemCard from '../../components/library/ProblemCard.vue'
 import { resolveCustomNavigationTop } from '../../utils/layout'
 import {
-  DEMO_RECORD_PROBLEMS,
   PUBLIC_PROBLEMS,
-  SUBJECT_OPTIONS,
   buildSolverUrl,
+  deleteProblemRecord,
   formatOpenedAt,
   getLocalProblemPreviews,
   getRecentProblemRecords,
@@ -20,17 +19,23 @@ import {
 } from '../../data/problems'
 
 type HistoryTab = 'saved' | 'recent'
+type HistorySubject = Exclude<ProblemSubject, 'worksheet'> | 'all'
 
 interface RecordRow {
   problem: ProblemPreview
   openedLabel: string
-  demo: boolean
 }
+
+const subjectFilters: Array<{ value: HistorySubject, label: string }> = [
+  { value: 'all', label: '全部学科' },
+  { value: 'math', label: '数学' },
+  { value: 'physics', label: '物理' },
+  { value: 'chemistry', label: '化学' },
+]
 
 const historyTab = ref<HistoryTab>('saved')
 const search = ref('')
-const selectedSubject = ref<ProblemSubject | 'all'>('all')
-const showDemo = ref(false)
+const selectedSubject = ref<HistorySubject>('all')
 const savedIds = ref<string[]>([])
 const recentRecords = ref<RecentProblemRecord[]>([])
 const localProblems = ref<ProblemPreview[]>([])
@@ -40,14 +45,19 @@ const problemById = computed(() => new Map(
   [...localProblems.value, ...PUBLIC_PROBLEMS].map((problem) => [problem.id, problem]),
 ))
 
-const savedRows = computed<RecordRow[]>(() => savedIds.value
-  .map((id) => problemById.value.get(id))
-  .filter((problem): problem is ProblemPreview => Boolean(problem))
-  .map((problem) => ({
+const savedRows = computed<RecordRow[]>(() => {
+  const localIds = new Set(localProblems.value.map((problem) => problem.id))
+  const submittedRows = localProblems.value.map((problem) => ({
     problem,
-    openedLabel: '已收藏到本机',
-    demo: false,
-  })))
+    openedLabel: '保存在当前设备',
+  }))
+  const savedPublicRows = savedIds.value
+    .filter((id) => !localIds.has(id))
+    .map((id) => problemById.value.get(id))
+    .filter((problem): problem is ProblemPreview => Boolean(problem))
+    .map((problem) => ({ problem, openedLabel: '已收藏到当前设备' }))
+  return [...submittedRows, ...savedPublicRows]
+})
 
 const recentRows = computed<RecordRow[]>(() => recentRecords.value
   .map((record) => {
@@ -55,33 +65,16 @@ const recentRows = computed<RecordRow[]>(() => recentRecords.value
     return problem ? {
       problem,
       openedLabel: formatOpenedAt(record.openedAt),
-      demo: false,
     } : undefined
   })
   .filter((row): row is RecordRow => Boolean(row)))
 
-const demoSavedRows = computed<RecordRow[]>(() => DEMO_RECORD_PROBLEMS.slice(0, 2).map((problem) => ({
-  problem,
-  openedLabel: '演示收藏记录',
-  demo: true,
-})))
-
-const demoRecentLabels = ['刚刚查看（演示）', '昨天查看（演示）', '3 天前查看（演示）']
-const demoRecentRows = computed<RecordRow[]>(() => DEMO_RECORD_PROBLEMS.map((problem, index) => ({
-  problem,
-  openedLabel: demoRecentLabels[index] || '最近查看（演示）',
-  demo: true,
-})))
-
-const personalRows = computed(() => historyTab.value === 'saved' ? savedRows.value : recentRows.value)
-const sourceRows = computed(() => {
-  if (!showDemo.value) return personalRows.value
-  return historyTab.value === 'saved' ? demoSavedRows.value : demoRecentRows.value
-})
-
+const sourceRows = computed(() => historyTab.value === 'saved' ? savedRows.value : recentRows.value)
 const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase())
 const filteredRows = computed(() => sourceRows.value.filter(({ problem }) => {
-  const subjectMatches = selectedSubject.value === 'all' || problem.subject === selectedSubject.value
+  const subjectMatches = selectedSubject.value === 'all'
+    || problem.subject === selectedSubject.value
+    || (selectedSubject.value === 'math' && problem.subject === 'worksheet')
   const keywordMatches = !normalizedSearch.value || [
     problem.title,
     problem.excerpt,
@@ -90,10 +83,21 @@ const filteredRows = computed(() => sourceRows.value.filter(({ problem }) => {
   ].join(' ').toLocaleLowerCase().includes(normalizedSearch.value)
   return subjectMatches && keywordMatches
 }))
+const pristineHistory = computed(() => (
+  !sourceRows.value.length
+  && !search.value.trim()
+  && selectedSubject.value === 'all'
+))
+const emptyTitle = computed(() => {
+  if (pristineHistory.value) return '还没有个人记录'
+  return historyTab.value === 'recent' ? '还没有浏览记录' : '没有找到匹配的题目'
+})
+const emptyDescription = computed(() => {
+  if (pristineHistory.value) return '提交一道题，或在题目广场收藏、打开内容后再回来。'
+  if (historyTab.value === 'recent') return '从题目广场打开一个示例，它会出现在这里。'
+  return '换一个关键词，或清除当前学科筛选。'
+})
 
-const savedCount = computed(() => savedRows.value.length)
-const recentCount = computed(() => recentRows.value.length)
-const hasFilters = computed(() => Boolean(search.value.trim()) || selectedSubject.value !== 'all')
 const isSaved = (problemId: string) => savedIds.value.includes(problemId)
 
 const refreshRecords = () => {
@@ -102,18 +106,7 @@ const refreshRecords = () => {
   recentRecords.value = getRecentProblemRecords()
 }
 
-const toggleDemo = () => {
-  showDemo.value = !showDemo.value
-  search.value = ''
-  selectedSubject.value = 'all'
-}
-
 const toggleSave = (problem: ProblemPreview) => {
-  if (showDemo.value) {
-    uni.showToast({ title: '演示记录不会修改本机收藏', icon: 'none' })
-    return
-  }
-
   const nextSaved = !isSaved(problem.id)
   savedIds.value = setProblemSaved(problem.id, nextSaved)
   uni.showToast({
@@ -124,8 +117,24 @@ const toggleSave = (problem: ProblemPreview) => {
 }
 
 const openProblem = (problem: ProblemPreview) => {
-  if (!showDemo.value) recentRecords.value = recordProblemOpen(problem.id)
+  recentRecords.value = recordProblemOpen(problem.id)
   uni.navigateTo({ url: buildSolverUrl(problem) })
+}
+
+const removeProblem = (problem: ProblemPreview) => {
+  uni.showModal({
+    title: '删除记录',
+    content: `确定删除“${problem.title}”这条记录吗？`,
+    confirmColor: '#c24053',
+    success: (result) => {
+      if (!result.confirm) return
+      const next = deleteProblemRecord(problem.id)
+      localProblems.value = next.localProblems
+      savedIds.value = next.savedIds
+      recentRecords.value = next.recentRecords
+      uni.showToast({ title: '记录已删除', icon: 'none' })
+    },
+  })
 }
 
 const clearFilters = () => {
@@ -133,8 +142,12 @@ const clearFilters = () => {
   selectedSubject.value = 'all'
 }
 
-const goToPlaza = () => {
-  uni.switchTab({ url: '/pages/plaza/index' })
+const handleEmptyAction = () => {
+  if (pristineHistory.value) {
+    uni.switchTab({ url: '/pages/plaza/index' })
+    return
+  }
+  clearFilters()
 }
 
 onShow(refreshRecords)
@@ -147,89 +160,52 @@ onPullDownRefresh(() => {
 <template>
   <view class="records-page" :style="pageStyle">
     <view class="page-header">
-      <view class="header-copy">
-        <view class="page-eyebrow">
-          <view class="eyebrow-dot" />
-          <text>保存在当前设备</text>
-        </view>
-        <text class="page-title">我的记录</text>
-        <text class="page-intro">重新打开收藏或最近看过的题，继续上次的思路。</text>
-      </view>
-      <button
-        class="demo-toggle"
-        :class="{ 'demo-toggle--active': showDemo }"
-        hover-class="demo-toggle--pressed"
-        @tap="toggleDemo"
-      >
-        {{ showDemo ? '返回我的记录' : '查看演示记录' }}
-      </button>
+      <text class="page-title">我的记录</text>
     </view>
 
-    <view v-if="showDemo" class="demo-notice">
-      <view class="notice-mark"><text>i</text></view>
-      <view class="notice-copy">
-        <text class="notice-title">当前正在查看演示数据</text>
-        <text class="notice-description">它只用于预览记录页效果，不会冒充你的个人历史。</text>
-      </view>
-      <text class="notice-close" role="button" aria-label="关闭演示记录" @tap="toggleDemo">×</text>
-    </view>
-
-    <view class="records-panel">
-      <view class="history-tabs">
-        <view
-          :class="['history-tab', { 'history-tab--active': historyTab === 'saved' }]"
-          role="button"
-          @tap="historyTab = 'saved'"
-        >
-          <text>收藏</text>
-          <text class="tab-count">{{ showDemo ? demoSavedRows.length : savedCount }}</text>
-        </view>
-        <view
-          :class="['history-tab', { 'history-tab--active': historyTab === 'recent' }]"
-          role="button"
-          @tap="historyTab = 'recent'"
-        >
-          <text>最近浏览</text>
-          <text class="tab-count">{{ showDemo ? demoRecentRows.length : recentCount }}</text>
-        </view>
-      </view>
-
+    <view class="library-toolbar">
       <view class="search-field">
-        <view class="search-icon" />
+        <view class="search-icon" aria-hidden="true" />
         <input
           v-model="search"
           class="search-input"
           type="text"
           confirm-type="search"
-          placeholder="搜索我的题目"
+          placeholder="搜索题目、知识点或学科…"
           placeholder-class="search-placeholder"
         >
-        <text v-if="search" class="clear-search" role="button" @tap="search = ''">清除</text>
+        <button v-if="search" class="clear-search" aria-label="清除搜索" @tap="search = ''">
+          <view class="clear-search__line clear-search__line--one" />
+          <view class="clear-search__line clear-search__line--two" />
+        </button>
       </view>
 
-      <scroll-view class="filter-scroll" scroll-x :show-scrollbar="false">
+      <view class="history-tabs">
+        <button
+          :class="['history-tab', { 'history-tab--active': historyTab === 'saved' }]"
+          @tap="historyTab = 'saved'"
+        >题目与收藏</button>
+        <button
+          :class="['history-tab', { 'history-tab--active': historyTab === 'recent' }]"
+          @tap="historyTab = 'recent'"
+        >最近浏览</button>
+      </view>
+
+      <scroll-view class="filter-scroll" scroll-x :show-scrollbar="false" enhanced>
         <view class="filter-track">
-          <view
-            v-for="subject in SUBJECT_OPTIONS"
+          <button
+            v-for="subject in subjectFilters"
             :key="subject.value"
             :class="['filter-chip', { 'filter-chip--active': selectedSubject === subject.value }]"
-            role="button"
             @tap="selectedSubject = subject.value"
-          >
-            <text>{{ subject.label }}</text>
-          </view>
+          >{{ subject.label }}</button>
         </view>
       </scroll-view>
     </view>
 
-    <view class="result-heading">
-      <view>
-        <text class="result-title">{{ historyTab === 'saved' ? '收藏的题目' : '最近看过' }}</text>
-        <text class="result-description">
-          {{ showDemo ? '演示记录不会写入你的历史' : historyTab === 'saved' ? '收藏后可从这里快速返回' : '按最近打开时间排列' }}
-        </text>
-      </view>
-      <text class="result-count">{{ filteredRows.length }} 道</text>
+    <view class="result-meta">
+      <text class="result-count">{{ filteredRows.length }} 个解题过程</text>
+      <text class="result-storage">数据保存在当前设备</text>
     </view>
 
     <view v-if="filteredRows.length" class="problem-grid">
@@ -238,48 +214,28 @@ onPullDownRefresh(() => {
           :problem="row.problem"
           :saved="isSaved(row.problem.id)"
           :show-difficulty="false"
+          show-delete
           :opened-label="row.openedLabel"
-          :demo="row.demo"
           @open="openProblem"
           @toggle-save="toggleSave"
+          @remove="removeProblem"
         />
       </view>
     </view>
 
     <view v-else class="empty-state">
-      <view class="empty-visual" :class="{ 'empty-visual--recent': historyTab === 'recent' }">
-        <view v-if="historyTab === 'saved'" class="empty-bookmark" />
-        <template v-else>
-          <view class="empty-clock-ring" />
-          <view class="empty-clock-hand empty-clock-hand--hour" />
-          <view class="empty-clock-hand empty-clock-hand--minute" />
-        </template>
-        <view class="empty-spark empty-spark--one" />
-        <view class="empty-spark empty-spark--two" />
+      <view :class="['empty-icon', { 'empty-icon--history': historyTab === 'recent' }]">
+        <view v-if="historyTab === 'recent'" class="history-mark">
+          <view class="history-mark__hand history-mark__hand--hour" />
+          <view class="history-mark__hand history-mark__hand--minute" />
+        </view>
+        <view v-else class="search-mark" />
       </view>
-
-      <template v-if="hasFilters || showDemo">
-        <text class="empty-title">没有匹配的记录</text>
-        <text class="empty-description">换一个关键词，或清除当前的学科筛选。</text>
-        <button class="primary-button" hover-class="primary-button--pressed" @tap="clearFilters">清除筛选</button>
-      </template>
-      <template v-else-if="historyTab === 'recent'">
-        <text class="empty-title">还没有浏览记录</text>
-        <text class="empty-description">从题目广场打开一个例题后，它会真实地出现在这里。</text>
-        <button class="primary-button" hover-class="primary-button--pressed" @tap="goToPlaza">去题目广场</button>
-        <text class="secondary-action" role="button" @tap="toggleDemo">先看演示效果</text>
-      </template>
-      <template v-else>
-        <text class="empty-title">还没有收藏题目</text>
-        <text class="empty-description">在题目广场点亮收藏，就能在这里继续学习。</text>
-        <button class="primary-button" hover-class="primary-button--pressed" @tap="goToPlaza">发现例题</button>
-        <text class="secondary-action" role="button" @tap="toggleDemo">查看演示记录</text>
-      </template>
-    </view>
-
-    <view class="privacy-note">
-      <view class="privacy-shield"><view /></view>
-      <text>登录服务接入前，收藏与浏览记录仅保存在这台设备。</text>
+      <text class="empty-title">{{ emptyTitle }}</text>
+      <text class="empty-description">{{ emptyDescription }}</text>
+      <button class="empty-button" @tap="handleEmptyAction">
+        {{ pristineHistory ? '去题目广场' : '查看全部题目' }}
+      </button>
     </view>
 
     <view class="page-bottom-space" />
@@ -290,177 +246,52 @@ onPullDownRefresh(() => {
 .records-page {
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 0 28rpx;
+  padding-right: 28rpx;
+  padding-left: 28rpx;
   color: #1f2937;
   background: #f7f8fa;
 }
 
-.page-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20rpx;
-  padding: 5rpx 2rpx 30rpx;
-}
-
-.header-copy { min-width: 0; }
-
-.page-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  margin-bottom: 13rpx;
-  color: #3974e8;
-  font-size: 22rpx;
-  font-weight: 750;
-  letter-spacing: 1rpx;
-}
-
-.eyebrow-dot {
-  width: 12rpx;
-  height: 12rpx;
-  border: 5rpx solid #dce9ff;
-  border-radius: 50%;
-  background: #3974e8;
-}
+.page-header { padding: 42rpx 0 39rpx; }
 
 .page-title {
   display: block;
   color: #182234;
-  font-size: 52rpx;
-  font-weight: 780;
-  line-height: 1.16;
+  font-size: 56rpx;
+  font-weight: 760;
+  line-height: 1.15;
   letter-spacing: -1.5rpx;
 }
 
-.page-intro {
-  display: block;
-  max-width: 500rpx;
-  margin-top: 15rpx;
-  color: #758194;
-  font-size: 25rpx;
-  line-height: 1.6;
-}
-
-.demo-toggle {
-  min-width: 172rpx;
-  height: 65rpx;
-  flex: none;
-  margin: 0 0 4rpx;
-  padding: 0 18rpx;
-  color: #3974e8;
-  font-size: 22rpx;
-  font-weight: 750;
-  line-height: 65rpx;
-  border: 2rpx solid #d9e5fa;
-  border-radius: 18rpx;
-  background: #fff;
-}
-
-.demo-toggle::after { border: 0; }
-.demo-toggle--active { color: #6b56b6; border-color: #e1daf7; background: #f7f4ff; }
-.demo-toggle--pressed { opacity: .78; }
-
-.demo-notice {
+.library-toolbar {
   display: flex;
-  align-items: center;
-  gap: 18rpx;
-  margin-bottom: 20rpx;
-  padding: 19rpx 20rpx;
-  border: 2rpx solid #e3dcf7;
-  border-radius: 22rpx;
-  background: #f7f4ff;
-}
-
-.notice-mark {
-  width: 42rpx;
-  height: 42rpx;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-family: serif;
-  font-size: 23rpx;
-  font-weight: 800;
-  border-radius: 50%;
-  background: #8065d4;
-}
-
-.notice-copy { min-width: 0; flex: 1; }
-.notice-title { display: block; color: #554681; font-size: 23rpx; font-weight: 750; }
-.notice-description { display: block; margin-top: 4rpx; color: #85799f; font-size: 20rpx; line-height: 1.45; }
-.notice-close { flex: none; padding: 12rpx 3rpx 12rpx 15rpx; color: #958aaa; font-size: 36rpx; line-height: 1; }
-
-.records-panel {
-  padding: 14rpx;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 12rpx;
+  padding: 20rpx;
   overflow: hidden;
-  border: 2rpx solid #e5e9ef;
-  border-radius: 28rpx;
+  border: 2rpx solid #e7ebf1;
+  border-radius: 34rpx;
   background: rgba(255, 255, 255, .94);
-  box-shadow: 0 12rpx 30rpx rgba(31, 41, 55, .045);
+  box-shadow: 0 24rpx 60rpx rgba(31, 41, 55, .045);
 }
-
-.history-tabs {
-  display: flex;
-  gap: 8rpx;
-  margin-bottom: 12rpx;
-  padding: 7rpx;
-  border-radius: 20rpx;
-  background: #eef4fc;
-}
-
-.history-tab {
-  height: 66rpx;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10rpx;
-  color: #748196;
-  font-size: 24rpx;
-  font-weight: 700;
-  border-radius: 15rpx;
-}
-
-.history-tab--active {
-  color: #1769da;
-  background: #fff;
-  box-shadow: 0 5rpx 15rpx rgba(44, 76, 119, .08);
-}
-
-.tab-count {
-  min-width: 29rpx;
-  height: 29rpx;
-  box-sizing: border-box;
-  padding: 0 7rpx;
-  color: #8b96a7;
-  font-size: 18rpx;
-  line-height: 29rpx;
-  text-align: center;
-  border-radius: 999rpx;
-  background: #e5eaf1;
-}
-
-.history-tab--active .tab-count { color: #3974e8; background: #eaf2ff; }
 
 .search-field {
-  height: 76rpx;
+  min-width: 0;
+  min-height: 92rpx;
   display: flex;
   align-items: center;
-  padding: 0 19rpx;
-  border-radius: 19rpx;
-  background: #f5f7f9;
+  padding: 0 22rpx;
 }
 
 .search-icon {
   position: relative;
-  width: 24rpx;
-  height: 24rpx;
+  width: 28rpx;
+  height: 28rpx;
   flex: none;
   box-sizing: border-box;
-  margin-right: 18rpx;
-  border: 4rpx solid #8d98a8;
+  margin-right: 22rpx;
+  border: 4rpx solid #96a0af;
   border-radius: 50%;
 }
 
@@ -468,229 +299,240 @@ onPullDownRefresh(() => {
   position: absolute;
   right: -10rpx;
   bottom: -7rpx;
-  width: 12rpx;
+  width: 13rpx;
   height: 4rpx;
   content: '';
   border-radius: 99rpx;
-  background: #8d98a8;
+  background: #96a0af;
   transform: rotate(45deg);
 }
 
 .search-input {
   min-width: 0;
-  height: 76rpx;
+  height: 92rpx;
   flex: 1;
-  color: #2d394b;
-  font-size: 25rpx;
+  color: #273244;
+  font-size: 26rpx;
+  font-weight: 600;
 }
 
-.search-placeholder { color: #a1a9b4; }
+.search-placeholder { color: #a6aeba; }
 
 .clear-search {
+  position: relative;
+  width: 54rpx;
+  height: 54rpx;
   flex: none;
-  padding: 13rpx 4rpx 13rpx 18rpx;
-  color: #3974e8;
-  font-size: 21rpx;
-  font-weight: 700;
+  margin: 0 -8rpx 0 8rpx;
+  padding: 0;
+  border-radius: 50%;
+  background: #f1f3f6;
 }
 
-.filter-scroll { width: 100%; margin-top: 12rpx; white-space: nowrap; }
+.clear-search::after,
+.history-tab::after,
+.filter-chip::after,
+.empty-button::after { border: 0; }
+
+.clear-search__line {
+  position: absolute;
+  top: 25rpx;
+  left: 16rpx;
+  width: 22rpx;
+  height: 3rpx;
+  border-radius: 99rpx;
+  background: #8c97a7;
+}
+
+.clear-search__line--one { transform: rotate(45deg); }
+.clear-search__line--two { transform: rotate(-45deg); }
+
+.history-tabs {
+  display: flex;
+  gap: 8rpx;
+  padding: 8rpx;
+  border-radius: 22rpx;
+  background: #eef5ff;
+}
+
+.history-tab {
+  min-width: 0;
+  min-height: 84rpx;
+  flex: 1;
+  margin: 0;
+  padding: 0 16rpx;
+  color: #7d8796;
+  font-size: 23rpx;
+  font-weight: 720;
+  line-height: 84rpx;
+  border-radius: 17rpx;
+  background: transparent;
+}
+
+.history-tab--active {
+  color: #1769da;
+  background: #fff;
+  box-shadow: 0 6rpx 18rpx rgba(36, 76, 128, .08);
+}
+
+.filter-scroll {
+  width: 100%;
+  white-space: nowrap;
+  border-radius: 22rpx;
+  background: #f4f6f8;
+}
 
 .filter-track {
+  min-width: 100%;
   display: inline-flex;
   gap: 8rpx;
-  padding: 2rpx;
+  box-sizing: border-box;
+  padding: 8rpx;
 }
 
 .filter-chip {
-  min-width: 92rpx;
-  height: 60rpx;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  padding: 0 23rpx;
-  color: #7f8998;
+  width: auto;
+  min-width: 104rpx;
+  height: 80rpx;
+  flex: none;
+  margin: 0;
+  padding: 0 22rpx;
+  color: #7d8796;
   font-size: 23rpx;
-  font-weight: 680;
+  font-weight: 720;
+  line-height: 80rpx;
   border-radius: 17rpx;
+  background: transparent;
 }
 
-.filter-chip--active { color: #1769da; background: #edf4ff; }
+.filter-chip--active {
+  color: #1769da;
+  background: #fff;
+  box-shadow: 0 6rpx 18rpx rgba(36, 76, 128, .08);
+}
 
-.result-heading {
+.result-meta {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20rpx;
-  margin: 36rpx 2rpx 20rpx;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8rpx;
+  margin: 44rpx 2rpx 30rpx;
+  color: #687386;
 }
 
-.result-title { display: block; color: #253144; font-size: 31rpx; font-weight: 760; line-height: 1.3; }
-.result-description { display: block; margin-top: 7rpx; color: #929ba8; font-size: 22rpx; line-height: 1.4; }
-.result-count { flex: none; padding-bottom: 3rpx; color: #9aa3b0; font-size: 21rpx; }
+.result-count { font-size: 26rpx; font-weight: 800; line-height: 1.4; }
+.result-storage { color: #a0a8b4; font-size: 22rpx; line-height: 1.4; }
 
-.problem-grid { display: flex; flex-wrap: wrap; gap: 22rpx; }
+.problem-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 44rpx;
+}
+
 .problem-grid__item { width: 100%; }
 
 .empty-state {
   display: flex;
   align-items: center;
   flex-direction: column;
-  margin-top: 18rpx;
-  padding: 60rpx 36rpx 52rpx;
+  margin-top: 72rpx;
+  padding: 76rpx 36rpx;
   text-align: center;
   border: 2rpx dashed #d6dde7;
-  border-radius: 30rpx;
+  border-radius: 38rpx;
   background: rgba(255, 255, 255, .68);
 }
 
-.empty-visual {
-  position: relative;
-  width: 118rpx;
+.empty-icon {
+  width: 112rpx;
   height: 112rpx;
-  margin-bottom: 7rpx;
-  border-radius: 34rpx;
-  background: #edf4ff;
-}
-
-.empty-bookmark {
-  position: absolute;
-  top: 24rpx;
-  left: 41rpx;
-  width: 36rpx;
-  height: 51rpx;
-  box-sizing: border-box;
-  border: 8rpx solid #79a3eb;
-  border-bottom: 0;
-  border-radius: 7rpx 7rpx 0 0;
-}
-
-.empty-bookmark::after {
-  position: absolute;
-  left: 4rpx;
-  bottom: -12rpx;
-  width: 19rpx;
-  height: 19rpx;
-  box-sizing: border-box;
-  content: '';
-  border-right: 8rpx solid #79a3eb;
-  border-bottom: 8rpx solid #79a3eb;
-  transform: rotate(45deg);
-}
-
-.empty-visual--recent { background: #eef8f5; }
-
-.empty-clock-ring {
-  position: absolute;
-  top: 23rpx;
-  left: 30rpx;
-  width: 59rpx;
-  height: 59rpx;
-  box-sizing: border-box;
-  border: 7rpx solid #5db39d;
-  border-radius: 50%;
-}
-
-.empty-clock-hand {
-  position: absolute;
-  z-index: 2;
-  height: 5rpx;
-  border-radius: 99rpx;
-  background: #5db39d;
-  transform-origin: left center;
-}
-
-.empty-clock-hand--hour { top: 53rpx; left: 59rpx; width: 20rpx; transform: rotate(-90deg); }
-.empty-clock-hand--minute { top: 53rpx; left: 59rpx; width: 25rpx; transform: rotate(25deg); }
-
-.empty-spark {
-  position: absolute;
-  width: 9rpx;
-  height: 9rpx;
-  border-radius: 50%;
-  background: #beaaf2;
-}
-
-.empty-spark--one { top: 15rpx; right: 9rpx; }
-.empty-spark--two { bottom: 17rpx; left: 12rpx; width: 6rpx; height: 6rpx; }
-
-.empty-title { margin-top: 15rpx; color: #2b3749; font-size: 31rpx; font-weight: 760; }
-
-.empty-description {
-  max-width: 510rpx;
-  margin-top: 12rpx;
-  color: #8d97a5;
-  font-size: 24rpx;
-  line-height: 1.62;
-}
-
-.primary-button {
-  min-width: 190rpx;
-  height: 72rpx;
-  margin: 27rpx 0 0;
-  padding: 0 29rpx;
-  color: #fff;
-  font-size: 24rpx;
-  font-weight: 750;
-  line-height: 72rpx;
-  border-radius: 18rpx;
-  background: #3974e8;
-  box-shadow: 0 10rpx 22rpx rgba(57, 116, 232, .19);
-}
-
-.primary-button::after { border: 0; }
-.primary-button--pressed { opacity: .86; }
-
-.secondary-action {
-  margin-top: 24rpx;
-  padding: 8rpx 18rpx;
-  color: #3974e8;
-  font-size: 23rpx;
-  font-weight: 700;
-}
-
-.privacy-note {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12rpx;
-  margin-top: 29rpx;
-  color: #9aa3af;
-  font-size: 20rpx;
-  line-height: 1.5;
-  text-align: center;
+  color: #2674de;
+  border-radius: 36rpx;
+  background: #edf5ff;
 }
 
-.privacy-shield {
+.empty-icon--history { color: #2b9f88; background: #eaf8f4; }
+
+.search-mark {
   position: relative;
-  width: 24rpx;
-  height: 27rpx;
-  flex: none;
+  width: 42rpx;
+  height: 42rpx;
   box-sizing: border-box;
-  border: 3rpx solid #aab3be;
-  border-radius: 8rpx 8rpx 11rpx 11rpx;
+  border: 7rpx solid currentColor;
+  border-radius: 50%;
 }
 
-.privacy-shield view {
+.search-mark::after {
   position: absolute;
-  top: 8rpx;
-  left: 7rpx;
-  width: 5rpx;
-  height: 5rpx;
+  right: -17rpx;
+  bottom: -11rpx;
+  width: 23rpx;
+  height: 7rpx;
+  content: '';
+  border-radius: 99rpx;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.history-mark {
+  position: relative;
+  width: 52rpx;
+  height: 52rpx;
+  box-sizing: border-box;
+  border: 7rpx solid currentColor;
   border-radius: 50%;
-  background: #aab3be;
+}
+
+.history-mark__hand {
+  position: absolute;
+  top: 20rpx;
+  left: 20rpx;
+  height: 5rpx;
+  border-radius: 99rpx;
+  background: currentColor;
+  transform-origin: left center;
+}
+
+.history-mark__hand--hour { width: 15rpx; transform: rotate(-90deg); }
+.history-mark__hand--minute { width: 19rpx; transform: rotate(24deg); }
+
+.empty-title {
+  margin-top: 36rpx;
+  color: #263245;
+  font-size: 34rpx;
+  font-weight: 760;
+}
+
+.empty-description {
+  max-width: 520rpx;
+  margin-top: 14rpx;
+  color: #8993a2;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.empty-button {
+  min-width: 190rpx;
+  height: 80rpx;
+  margin: 40rpx 0 0;
+  padding: 0 30rpx;
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 80rpx;
+  border-radius: 20rpx;
+  background: #2674de;
 }
 
 .page-bottom-space { height: calc(150rpx + env(safe-area-inset-bottom)); }
 
-@media (max-width: 380px) {
-  .page-header { align-items: flex-start; flex-direction: column; }
-  .demo-toggle { align-self: flex-start; margin-top: -5rpx; }
-}
-
 @media (min-width: 768px) {
   .records-page { padding-right: 44rpx; padding-left: 44rpx; }
-  .problem-grid__item { width: calc(50% - 11rpx); }
+  .result-meta { align-items: center; flex-direction: row; justify-content: space-between; }
+  .problem-grid { flex-flow: row wrap; gap: 32rpx; }
+  .problem-grid__item { width: calc(50% - 16rpx); }
 }
 </style>

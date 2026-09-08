@@ -1,5 +1,13 @@
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
-const API_BASE_URL = (configuredBaseUrl || 'http://localhost:8002').replace(/\/$/, '')
+const defaultBaseUrl = import.meta.env.DEV
+  ? 'http://localhost:8002'
+  : 'https://uniprism.cn/api'
+
+export const API_BASE_URL = (configuredBaseUrl || defaultBaseUrl).replace(/\/$/, '')
+
+export const MINIAPP_CLIENT_HEADERS = {
+  'X-Miniapp-Client': 'graphtutor-weapp',
+} as const
 
 export class MiniappApiError extends Error {
   readonly statusCode: number
@@ -38,7 +46,7 @@ export const request = <T>({ path, method = 'GET', data, timeout = 15000 }: Requ
       timeout,
       header: {
         'Content-Type': 'application/json',
-        'X-Miniapp-Client': 'graphtutor-weapp',
+        ...MINIAPP_CLIENT_HEADERS,
       },
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -60,7 +68,7 @@ export const uploadProblemImage = (filePath: string) => (
       url: `${API_BASE_URL}/resource/image`,
       filePath,
       name: 'file',
-      header: { 'X-Miniapp-Client': 'graphtutor-weapp' },
+      header: MINIAPP_CLIENT_HEADERS,
       success(response) {
         if (response.statusCode < 200 || response.statusCode >= 300) {
           reject(new MiniappApiError('题图上传失败，请稍后再试。', response.statusCode))

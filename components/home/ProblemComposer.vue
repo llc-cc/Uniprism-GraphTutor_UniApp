@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
+import MiniFormulaVoicePanel from '../formula/MiniFormulaVoicePanel.vue'
+import { useSpokenFormulaVoice } from '../../composables/useSpokenFormulaVoice'
 
 const props = withDefaults(defineProps<{
   loading?: boolean
@@ -15,15 +17,18 @@ const prompt = ref('')
 const imagePath = ref('')
 const imageName = ref('')
 const errorText = ref('')
-const voiceActive = ref(false)
-const voiceSeconds = ref(0)
-let voiceTimer: ReturnType<typeof setInterval> | undefined
-
-const formattedVoiceTime = computed(() => {
-  const seconds = String(voiceSeconds.value % 60).padStart(2, '0')
-  const minutes = String(Math.floor(voiceSeconds.value / 60)).padStart(2, '0')
-  return `${minutes}:${seconds}`
-})
+const voice = useSpokenFormulaVoice()
+const {
+  status: voiceStatus,
+  seconds: voiceSeconds,
+  transcript: voiceTranscript,
+  resolution: voiceResolution,
+  selectedCandidateIndex: voiceSelectedCandidateIndex,
+  selectedLatex: voiceSelectedLatex,
+  errorMessage: voiceErrorMessage,
+  permissionRecoveryRequired: voicePermissionRecoveryRequired,
+} = voice
+const voiceActive = computed(() => voice.status.value !== 'idle')
 
 const chooseProblemImage = (sourceType: 'camera' | 'album') => {
   if (props.loading) return
@@ -66,36 +71,31 @@ const clearImage = () => {
   imageName.value = ''
 }
 
-const stopVoice = (appendTranscript = true) => {
-  if (voiceTimer) {
-    clearInterval(voiceTimer)
-    voiceTimer = undefined
-  }
-  if (appendTranscript && !prompt.value.trim()) {
-    prompt.value = '已知抛物线 y = (x - 2)² - 1，求它的顶点、对称轴和零点。'
-  }
-  voiceActive.value = false
-}
-
 const toggleVoice = () => {
   if (props.loading) return
-  if (voiceActive.value) {
-    stopVoice()
+  if (voice.isListening.value) {
+    voice.stop()
     return
   }
-
+  if (voice.isBusy.value) return
+  if (voice.status.value === 'preview' || voice.status.value === 'error') voice.cancel()
   errorText.value = ''
-  voiceSeconds.value = 0
-  voiceActive.value = true
-  voiceTimer = setInterval(() => {
-    voiceSeconds.value += 1
-    if (voiceSeconds.value >= 15) stopVoice()
-  }, 1000)
+  void voice.start()
+}
+
+const insertSpokenFormula = (latex: string) => {
+  const formula = `$${latex.trim()}$`
+  prompt.value = [prompt.value.trim(), formula].filter(Boolean).join(' ')
+  voice.cancel()
 }
 
 const submitProblem = () => {
   if (props.loading) return
-  if (voiceActive.value) stopVoice()
+  if (voice.isBusy.value) {
+    if (voice.isListening.value) voice.stop()
+    errorText.value = '请先完成语音公式识别，再提交题目。'
+    return
+  }
 
   const question = prompt.value.trim()
   if (!question && !imagePath.value) {
@@ -111,7 +111,6 @@ const submitProblem = () => {
   })
 }
 
-onUnmounted(() => stopVoice(false))
 </script>
 
 <template>
@@ -155,22 +154,24 @@ onUnmounted(() => stopVoice(false))
       </button>
     </view>
 
-    <view v-if="voiceActive" class="voice-state">
-      <view class="voice-state__indicator" aria-hidden="true">
-        <view class="voice-wave voice-wave--one" />
-        <view class="voice-wave voice-wave--two" />
-        <view class="voice-wave voice-wave--three" />
-        <view class="voice-wave voice-wave--four" />
-        <view class="voice-wave voice-wave--five" />
-      </view>
-      <view class="voice-state__copy">
-        <text class="voice-state__title">正在聆听你的问题</text>
-        <text class="voice-state__hint">演示模式 · {{ formattedVoiceTime }}</text>
-      </view>
-      <button class="voice-state__done" hover-class="button-hover" @tap="stopVoice()">
-        <text>完成</text>
-      </button>
-    </view>
+    <MiniFormulaVoicePanel
+      v-if="voiceStatus !== 'idle'"
+      :status="voiceStatus"
+      :seconds="voiceSeconds"
+      :transcript="voiceTranscript"
+      :resolution="voiceResolution"
+      :selected-candidate-index="voiceSelectedCandidateIndex"
+      :selected-latex="voiceSelectedLatex"
+      :error-message="voiceErrorMessage"
+      :permission-recovery-required="voicePermissionRecoveryRequired"
+      @stop="voice.stop"
+      @cancel="voice.cancel"
+      @retry="voice.retry"
+      @relisten="voice.start()"
+      @clarify="voice.answerClarification"
+      @select="voice.selectCandidate"
+      @insert="insertSpokenFormula"
+    />
 
     <view v-if="errorText" class="composer-error" role="alert">
       <view class="composer-error__icon">
@@ -208,7 +209,7 @@ onUnmounted(() => stopVoice(false))
               <view class="microphone-glyph__stand" />
             </view>
           </view>
-          <text>{{ voiceActive ? '正在聆听…' : '语音' }}</text>
+          <text>{{ voice.isListening.value ? '停止' : voice.isBusy.value ? '处理中…' : '语音公式' }}</text>
         </button>
       </view>
 

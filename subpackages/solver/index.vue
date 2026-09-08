@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   getLocalProblemDrafts,
+  buildSolverUrl,
   PUBLIC_PROBLEMS,
   resolveProblemArtwork,
   type ProblemSubject,
@@ -16,6 +17,9 @@ import { resolveCustomNavigationTop } from '../../utils/layout'
 import PrismWorkspace from '../../components/geometry/PrismWorkspace.vue'
 import IllustratedSolution from '../../components/solver/IllustratedSolution.vue'
 import { PRISM_2023A_QUESTION, PRISM_2023A_STEPS } from '../../data/prism-2023a'
+import MiniFormulaVoicePanel from '../../components/formula/MiniFormulaVoicePanel.vue'
+import { useSpokenFormulaVoice } from '../../composables/useSpokenFormulaVoice'
+import type { SpokenFormulaClarificationOption } from '../../services/spoken-formula'
 import MiniFormulaKeyboard from './components/MiniFormulaKeyboard.vue'
 
 type PageMode = 'steps' | 'diagram'
@@ -428,14 +432,23 @@ const followUpExchanges = ref<FollowUpExchange[]>([])
 const formulaKeyboardOpen = ref(false)
 const followUpSelectionStart = ref(0)
 const followUpSelectionEnd = ref(0)
-const followUpVoiceActive = ref(false)
-const followUpVoiceSeconds = ref(0)
+const followUpVoice = useSpokenFormulaVoice()
+const {
+  status: followUpVoiceStatus,
+  seconds: followUpVoiceSeconds,
+  transcript: followUpVoiceTranscript,
+  resolution: followUpVoiceResolution,
+  selectedCandidateIndex: followUpVoiceSelectedCandidateIndex,
+  selectedLatex: followUpVoiceSelectedLatex,
+  errorMessage: followUpVoiceErrorMessage,
+  permissionRecoveryRequired: followUpVoicePermissionRecoveryRequired,
+} = followUpVoice
+const followUpVoiceActive = computed(() => followUpVoiceStatus.value !== 'idle')
 const scrollIntoViewId = ref('')
 const navigationTop = resolveCustomNavigationTop()
 const topBarStyle = { paddingTop: navigationTop }
 const contentScrollStyle = { top: `calc(${navigationTop} + 89rpx)` }
 let exchangeSequence = 0
-let followUpVoiceTimer: ReturnType<typeof setInterval> | undefined
 
 const safeDecode = (value: unknown): string => {
   if (typeof value !== 'string') return ''
@@ -534,6 +547,11 @@ const resolveProblem = (query: PageQuery) => {
 }
 
 onLoad((query) => {
+  const publicProblem = PUBLIC_PROBLEMS.find((problem) => problem.id === query?.id || problem.webId === query?.id)
+  if (publicProblem?.webId) {
+    uni.redirectTo({ url: buildSolverUrl(publicProblem) })
+    return
+  }
   loadPreferences()
   resolveProblem((query ?? {}) as PageQuery)
 })
@@ -583,11 +601,6 @@ const followUpContext = computed(() => (
 const currentFollowUpExchanges = computed(() => (
   followUpExchanges.value.filter((exchange) => exchange.stepIndex === activeStep.value)
 ))
-const formattedFollowUpVoiceTime = computed(() => {
-  const seconds = String(followUpVoiceSeconds.value % 60).padStart(2, '0')
-  const minutes = String(Math.floor(followUpVoiceSeconds.value / 60)).padStart(2, '0')
-  return `${minutes}:${seconds}`
-})
 const progressLabel = computed(() => (
   activeStep.value === activeTemplate.value.steps.length - 1
     ? '完整图解已显示'
@@ -749,38 +762,51 @@ const toggleFormulaKeyboard = () => {
     scrollIntoViewId.value = ''
   }
   if (formulaKeyboardOpen.value && followUpVoiceActive.value) {
-    followUpVoiceActive.value = false
-    if (followUpVoiceTimer) clearInterval(followUpVoiceTimer)
-    followUpVoiceTimer = undefined
-  }
-}
-
-const stopFollowUpVoice = (appendDemoQuestion = true) => {
-  if (followUpVoiceTimer) clearInterval(followUpVoiceTimer)
-  followUpVoiceTimer = undefined
-  followUpVoiceActive.value = false
-  if (appendDemoQuestion && !followUpText.value.trim()) {
-    followUpText.value = `为什么“${currentStep.value?.title ?? '当前步骤'}”可以这样处理？`
-    setFollowUpSelection(followUpText.value.length)
+    followUpVoice.cancel()
   }
 }
 
 const toggleFollowUpVoice = () => {
-  if (followUpVoiceActive.value) {
-    stopFollowUpVoice()
+  if (followUpVoice.isListening.value) {
+    followUpVoice.stop()
     return
   }
+  if (followUpVoice.isBusy.value) return
+  if (followUpVoiceStatus.value === 'preview' || followUpVoiceStatus.value === 'error') {
+    followUpVoice.cancel()
+  }
   formulaKeyboardOpen.value = false
-  followUpVoiceSeconds.value = 0
-  followUpVoiceActive.value = true
-  followUpVoiceTimer = setInterval(() => {
-    followUpVoiceSeconds.value += 1
-    if (followUpVoiceSeconds.value >= 15) stopFollowUpVoice()
-  }, 1000)
+  void followUpVoice.start()
+}
+
+const insertSpokenFormula = (latex: string) => {
+  replaceFollowUpSelection(`$${latex.trim()}$`)
+  followUpVoice.cancel()
+}
+
+const useFormulaKeyboardFromVoice = () => {
+  followUpVoice.cancel()
+  formulaKeyboardOpen.value = true
+  scrollIntoViewId.value = ''
+  void nextTick(() => {
+    scrollIntoViewId.value = 'article-follow-up-composer'
+  })
+}
+
+const answerFollowUpVoiceClarification = (option: SpokenFormulaClarificationOption) => {
+  if (option.action === 'useKeyboard') {
+    useFormulaKeyboardFromVoice()
+    return
+  }
+  void followUpVoice.answerClarification(option)
 }
 
 const submitFollowUp = (preset?: string) => {
-  if (followUpVoiceActive.value) stopFollowUpVoice(false)
+  if (followUpVoice.isBusy.value) {
+    if (followUpVoice.isListening.value) followUpVoice.stop()
+    uni.showToast({ title: '请先完成语音公式识别', icon: 'none' })
+    return
+  }
   const question = (preset ?? followUpText.value).trim()
   if (!question) {
     uni.showToast({ title: '先输入一个问题', icon: 'none' })
@@ -801,10 +827,6 @@ const submitFollowUp = (preset?: string) => {
     scrollIntoViewId.value = `follow-up-${id}`
   })
 }
-
-onUnmounted(() => {
-  if (followUpVoiceTimer) clearInterval(followUpVoiceTimer)
-})
 
 const goBack = () => {
   uni.navigateBack({
@@ -1383,14 +1405,25 @@ const goBack = () => {
           </view>
 
           <view v-if="isArticleWorkspace" id="article-follow-up-composer" class="article-composer-wrap">
-            <view v-if="followUpVoiceActive" class="follow-up-voice-state">
-              <view class="follow-up-voice-state__pulse" />
-              <view class="follow-up-voice-state__copy">
-                <text class="follow-up-voice-state__title">正在聆听你的问题</text>
-                <text class="follow-up-voice-state__time">语音演示 · {{ formattedFollowUpVoiceTime }}</text>
-              </view>
-              <button class="follow-up-voice-state__done" @tap="stopFollowUpVoice()">完成</button>
-            </view>
+            <MiniFormulaVoicePanel
+              v-if="followUpVoiceStatus !== 'idle'"
+              :status="followUpVoiceStatus"
+              :seconds="followUpVoiceSeconds"
+              :transcript="followUpVoiceTranscript"
+              :resolution="followUpVoiceResolution"
+              :selected-candidate-index="followUpVoiceSelectedCandidateIndex"
+              :selected-latex="followUpVoiceSelectedLatex"
+              :error-message="followUpVoiceErrorMessage"
+              :permission-recovery-required="followUpVoicePermissionRecoveryRequired"
+              show-keyboard-action
+              @stop="followUpVoice.stop"
+              @cancel="followUpVoice.cancel"
+              @retry="followUpVoice.retry"
+              @relisten="followUpVoice.start()"
+              @clarify="answerFollowUpVoiceClarification"
+              @select="followUpVoice.selectCandidate"
+              @insert="insertSpokenFormula"
+            />
 
             <view class="article-composer">
               <input

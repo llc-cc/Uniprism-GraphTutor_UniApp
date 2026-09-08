@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import ProblemCard from '../../components/library/ProblemCard.vue'
 import { resolveCustomNavigationTop } from '../../utils/layout'
 import {
   PUBLIC_PROBLEMS,
-  SUBJECT_OPTIONS,
   buildSolverUrl,
   getSavedProblemIds,
   recordProblemOpen,
@@ -14,63 +13,27 @@ import {
   type ProblemSubject,
 } from '../../data/problems'
 
-interface SubjectCapability {
-  id: ProblemSubject | 'biology'
-  name: string
-  topic: string
-  description: string
-  mark: string
-  tone: string
-  status: 'ready' | 'planned'
-}
+type PlazaSubject = Exclude<ProblemSubject, 'worksheet'> | 'all'
 
-const capabilities: SubjectCapability[] = [
-  {
-    id: 'math',
-    name: '数学',
-    topic: '函数 · 几何',
-    description: '拖动关键点，让公式、曲线与空间关系同步变化。',
-    mark: 'ƒ(x)',
-    tone: 'blue',
-    status: 'ready',
-  },
-  {
-    id: 'physics',
-    name: '物理',
-    topic: '受力 · 运动',
-    description: '拆分力与运动过程，逐帧核对方向和数量关系。',
-    mark: 'F',
-    tone: 'orange',
-    status: 'ready',
-  },
-  {
-    id: 'chemistry',
-    name: '化学',
-    topic: '结构 · 反应',
-    description: '观察粒子连接与反应进程，把微观变化画出来。',
-    mark: 'CH₃',
-    tone: 'rose',
-    status: 'ready',
-  },
-  {
-    id: 'biology',
-    name: '生物',
-    topic: '细胞 · 遗传',
-    description: '用过程图串联物质流动、能量转化和遗传关系。',
-    mark: 'DNA',
-    tone: 'green',
-    status: 'planned',
-  },
+const PAGE_SIZE = 9
+const subjectFilters: Array<{ value: PlazaSubject, label: string }> = [
+  { value: 'all', label: '全部学科' },
+  { value: 'math', label: '数学' },
+  { value: 'physics', label: '物理' },
+  { value: 'chemistry', label: '化学' },
 ]
 
 const search = ref('')
-const selectedSubject = ref<ProblemSubject | 'all'>('all')
+const selectedSubject = ref<PlazaSubject>('all')
+const currentPage = ref(1)
 const savedIds = ref<string[]>([])
 const pageStyle = { paddingTop: resolveCustomNavigationTop() }
 
 const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase())
 const filteredProblems = computed(() => PUBLIC_PROBLEMS.filter((problem) => {
-  const subjectMatches = selectedSubject.value === 'all' || problem.subject === selectedSubject.value
+  const subjectMatches = selectedSubject.value === 'all'
+    || problem.subject === selectedSubject.value
+    || (selectedSubject.value === 'math' && problem.subject === 'worksheet')
   const keywordMatches = !normalizedSearch.value || [
     problem.title,
     problem.excerpt,
@@ -79,6 +42,19 @@ const filteredProblems = computed(() => PUBLIC_PROBLEMS.filter((problem) => {
   ].join(' ').toLocaleLowerCase().includes(normalizedSearch.value)
   return subjectMatches && keywordMatches
 }))
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredProblems.value.length / PAGE_SIZE)))
+const visibleProblems = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE
+  return filteredProblems.value.slice(start, start + PAGE_SIZE)
+})
+const pageNumbers = computed(() => Array.from({ length: totalPages.value }, (_, index) => index + 1))
+
+watch([search, selectedSubject], () => {
+  currentPage.value = 1
+})
+watch(totalPages, (pages) => {
+  if (currentPage.value > pages) currentPage.value = pages
+})
 
 const isSaved = (problemId: string) => savedIds.value.includes(problemId)
 
@@ -101,17 +77,15 @@ const openProblem = (problem: ProblemPreview) => {
   uni.navigateTo({ url: buildSolverUrl(problem) })
 }
 
-const selectCapability = (capability: SubjectCapability) => {
-  if (capability.status === 'planned' || capability.id === 'biology') {
-    uni.showToast({ title: '生物动态图解正在规划中', icon: 'none' })
-    return
-  }
-  selectedSubject.value = capability.id
-}
-
 const clearFilters = () => {
   search.value = ''
   selectedSubject.value = 'all'
+}
+
+const changePage = (page: number) => {
+  if (page < 1 || page > totalPages.value || page === currentPage.value) return
+  currentPage.value = page
+  uni.pageScrollTo({ scrollTop: 0, duration: 220 })
 }
 
 onShow(refreshSaved)
@@ -124,92 +98,48 @@ onPullDownRefresh(() => {
 <template>
   <view class="plaza-page" :style="pageStyle">
     <view class="page-header">
-      <view class="page-eyebrow">
-        <view class="eyebrow-dot" />
-        <text>可交互例题库</text>
-      </view>
       <text class="page-title">题目广场</text>
-      <text class="page-intro">从一道准备好的例题开始，边看推理，边操作图解。</text>
     </view>
 
-    <view class="section-heading">
-      <view>
-        <text class="section-title">学科动态图解</text>
-        <text class="section-subtitle">先了解每个学科的画板能做什么</text>
-      </view>
-      <text class="section-count">4 个学科</text>
-    </view>
-
-    <scroll-view class="capability-scroll" scroll-x :show-scrollbar="false">
-      <view class="capability-track">
-        <view
-          v-for="capability in capabilities"
-          :key="capability.id"
-          :class="[
-            'capability-card',
-            `capability-card--${capability.tone}`,
-            { 'capability-card--selected': selectedSubject === capability.id },
-          ]"
-          role="button"
-          :aria-label="`${capability.name}：${capability.description}`"
-          hover-class="capability-card--pressed"
-          @tap="selectCapability(capability)"
-        >
-          <view class="capability-top">
-            <view class="capability-mark"><text>{{ capability.mark }}</text></view>
-            <text v-if="capability.status === 'planned'" class="planned-tag">规划中</text>
-            <view v-else class="ready-tag"><view />可操作</view>
-          </view>
-          <text class="capability-name">{{ capability.name }}</text>
-          <text class="capability-topic">{{ capability.topic }}</text>
-          <text class="capability-description">{{ capability.description }}</text>
-          <view class="capability-action">
-            <text>{{ capability.status === 'ready' ? '筛选例题' : '敬请期待' }}</text>
-            <text v-if="capability.status === 'ready'">→</text>
-          </view>
-        </view>
-      </view>
-    </scroll-view>
-
-    <view class="library-panel">
+    <view class="library-toolbar">
       <view class="search-field">
-        <view class="search-icon" />
+        <view class="search-icon" aria-hidden="true" />
         <input
           v-model="search"
           class="search-input"
           type="text"
           confirm-type="search"
-          placeholder="搜索题目或知识点"
+          placeholder="搜索题目、知识点或学科…"
           placeholder-class="search-placeholder"
         >
-        <text v-if="search" class="clear-search" role="button" @tap="search = ''">清除</text>
+        <button v-if="search" class="clear-search" aria-label="清除搜索" @tap="search = ''">
+          <view class="clear-search__line clear-search__line--one" />
+          <view class="clear-search__line clear-search__line--two" />
+        </button>
       </view>
 
-      <scroll-view class="filter-scroll" scroll-x :show-scrollbar="false">
+      <scroll-view class="filter-scroll" scroll-x :show-scrollbar="false" enhanced>
         <view class="filter-track">
-          <view
-            v-for="subject in SUBJECT_OPTIONS"
+          <button
+            v-for="subject in subjectFilters"
             :key="subject.value"
             :class="['filter-chip', { 'filter-chip--active': selectedSubject === subject.value }]"
-            role="button"
+            :aria-label="`筛选${subject.label}`"
             @tap="selectedSubject = subject.value"
           >
             <text>{{ subject.label }}</text>
-          </view>
+          </button>
         </view>
       </scroll-view>
     </view>
 
-    <view class="result-heading">
-      <view>
-        <text class="result-title">公开例题</text>
-        <text class="result-description">每道题都准备了完整步骤与对应画板</text>
-      </view>
-      <text class="result-count">{{ filteredProblems.length }} 道</text>
+    <view class="result-meta">
+      <text class="result-count">{{ filteredProblems.length }} 个解题过程</text>
+      <text class="result-page">第 {{ currentPage }} / {{ totalPages }} 页 · 每页 {{ PAGE_SIZE }} 题</text>
     </view>
 
     <view v-if="filteredProblems.length" class="problem-grid">
-      <view v-for="problem in filteredProblems" :key="problem.id" class="problem-grid__item">
+      <view v-for="problem in visibleProblems" :key="problem.id" class="problem-grid__item">
         <ProblemCard
           :problem="problem"
           :saved="isSaved(problem.id)"
@@ -226,9 +156,28 @@ onPullDownRefresh(() => {
         <view class="empty-line empty-line--one" />
         <view class="empty-line empty-line--two" />
       </view>
-      <text class="empty-title">没有匹配的例题</text>
-      <text class="empty-description">试试其他关键词，或清除当前学科筛选。</text>
+      <text class="empty-title">没有找到匹配的题目</text>
+      <text class="empty-description">换一个关键词，或清除当前学科筛选。</text>
       <button class="empty-button" hover-class="empty-button--pressed" @tap="clearFilters">查看全部题目</button>
+    </view>
+
+    <view v-if="filteredProblems.length" class="pagination" aria-label="题目分页">
+      <button
+        :class="['pagination-button', 'pagination-button--wide', { 'pagination-button--disabled': currentPage === 1 }]"
+        :disabled="currentPage === 1"
+        @tap="changePage(currentPage - 1)"
+      >上一页</button>
+      <button
+        v-for="page in pageNumbers"
+        :key="page"
+        :class="['pagination-button', { 'pagination-button--active': page === currentPage }]"
+        @tap="changePage(page)"
+      >{{ page }}</button>
+      <button
+        :class="['pagination-button', 'pagination-button--wide', { 'pagination-button--disabled': currentPage === totalPages }]"
+        :disabled="currentPage === totalPages"
+        @tap="changePage(currentPage + 1)"
+      >下一页</button>
     </view>
 
     <view class="page-bottom-space" />
@@ -239,232 +188,53 @@ onPullDownRefresh(() => {
 .plaza-page {
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 0 28rpx;
+  padding-right: 28rpx;
+  padding-left: 28rpx;
   color: #1f2937;
   background: #f7f8fa;
 }
 
-.page-header { padding: 5rpx 2rpx 34rpx; }
-
-.page-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  margin-bottom: 13rpx;
-  color: #3974e8;
-  font-size: 22rpx;
-  font-weight: 750;
-  letter-spacing: 1.5rpx;
-}
-
-.eyebrow-dot {
-  width: 12rpx;
-  height: 12rpx;
-  border: 5rpx solid #dce9ff;
-  border-radius: 50%;
-  background: #3974e8;
-}
+.page-header { padding: 42rpx 0 39rpx; }
 
 .page-title {
   display: block;
   color: #182234;
-  font-size: 52rpx;
-  font-weight: 780;
-  line-height: 1.16;
+  font-size: 56rpx;
+  font-weight: 760;
+  line-height: 1.15;
   letter-spacing: -1.5rpx;
 }
 
-.page-intro {
-  display: block;
-  margin-top: 15rpx;
-  color: #758194;
-  font-size: 26rpx;
-  line-height: 1.65;
-}
-
-.section-heading,
-.result-heading {
+.library-toolbar {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20rpx;
-  padding: 0 2rpx;
-}
-
-.section-title,
-.result-title {
-  display: block;
-  color: #253144;
-  font-size: 31rpx;
-  font-weight: 760;
-  line-height: 1.3;
-}
-
-.section-subtitle,
-.result-description {
-  display: block;
-  margin-top: 7rpx;
-  color: #929ba8;
-  font-size: 22rpx;
-  line-height: 1.4;
-}
-
-.section-count,
-.result-count {
-  flex: none;
-  padding-bottom: 3rpx;
-  color: #9aa3b0;
-  font-size: 21rpx;
-}
-
-.capability-scroll {
-  width: calc(100% + 56rpx);
-  margin: 22rpx -28rpx 34rpx;
-  white-space: nowrap;
-}
-
-.capability-track {
-  display: inline-flex;
-  gap: 18rpx;
-  padding: 0 28rpx 8rpx;
-}
-
-.capability-card {
-  width: 300rpx;
-  min-height: 302rpx;
-  display: inline-flex;
+  align-items: stretch;
   flex-direction: column;
-  box-sizing: border-box;
-  padding: 22rpx;
+  gap: 12rpx;
+  padding: 20rpx;
   overflow: hidden;
-  white-space: normal;
-  border: 2rpx solid #dce7f9;
-  border-radius: 28rpx;
-  background: linear-gradient(145deg, #edf4ff, #fff);
-  box-shadow: 0 12rpx 28rpx rgba(41, 67, 103, .045);
-  transition: transform 100ms ease;
-}
-
-.capability-card--orange { border-color: #f3dfd2; background: linear-gradient(145deg, #fff1e8, #fff); }
-.capability-card--rose { border-color: #f1dce3; background: linear-gradient(145deg, #fff0f4, #fff); }
-.capability-card--green { border-color: #d7e9e3; background: linear-gradient(145deg, #ebf8f3, #fff); }
-.capability-card--selected { border-color: #83aaf0; box-shadow: 0 12rpx 30rpx rgba(57, 116, 232, .11); }
-.capability-card--pressed { transform: scale(.975); }
-
-.capability-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 18rpx;
-}
-
-.capability-mark {
-  min-width: 62rpx;
-  height: 54rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  padding: 0 10rpx;
-  color: #3974e8;
-  font-size: 23rpx;
-  font-weight: 800;
-  border: 2rpx solid rgba(57, 116, 232, .12);
-  border-radius: 16rpx;
-  background: rgba(255, 255, 255, .78);
-}
-
-.capability-card--orange .capability-mark { color: #c46834; border-color: rgba(232, 121, 61, .15); }
-.capability-card--rose .capability-mark { color: #c14c69; border-color: rgba(216, 93, 117, .15); }
-.capability-card--green .capability-mark { color: #27816f; border-color: rgba(43, 159, 136, .15); }
-
-.ready-tag,
-.planned-tag {
-  display: flex;
-  align-items: center;
-  gap: 7rpx;
-  padding: 8rpx 12rpx;
-  color: #517092;
-  font-size: 19rpx;
-  font-weight: 700;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, .72);
-}
-
-.ready-tag view {
-  width: 9rpx;
-  height: 9rpx;
-  border-radius: 50%;
-  background: #35aa82;
-}
-
-.planned-tag { color: #8c7e93; }
-
-.capability-name {
-  color: #243044;
-  font-size: 30rpx;
-  font-weight: 780;
-}
-
-.capability-topic {
-  margin-top: 5rpx;
-  color: #66748a;
-  font-size: 22rpx;
-  font-weight: 650;
-}
-
-.capability-description {
-  display: -webkit-box;
-  margin-top: 14rpx;
-  overflow: hidden;
-  color: #7f8a9a;
-  font-size: 22rpx;
-  line-height: 1.52;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.capability-action {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  margin-top: auto;
-  padding-top: 14rpx;
-  color: #3974e8;
-  font-size: 21rpx;
-  font-weight: 750;
-}
-
-.capability-card--orange .capability-action { color: #ca6934; }
-.capability-card--rose .capability-action { color: #c14e69; }
-.capability-card--green .capability-action { color: #27816f; }
-
-.library-panel {
-  overflow: hidden;
-  padding: 14rpx;
-  border: 2rpx solid #e5e9ef;
-  border-radius: 28rpx;
+  border: 2rpx solid #e7ebf1;
+  border-radius: 34rpx;
   background: rgba(255, 255, 255, .94);
-  box-shadow: 0 12rpx 30rpx rgba(31, 41, 55, .045);
+  box-shadow: 0 24rpx 60rpx rgba(31, 41, 55, .045);
 }
 
 .search-field {
-  height: 76rpx;
+  min-width: 0;
+  min-height: 92rpx;
   display: flex;
   align-items: center;
-  padding: 0 19rpx;
-  border-radius: 19rpx;
-  background: #f5f7f9;
+  padding: 0 22rpx;
+  color: #9aa3b1;
 }
 
 .search-icon {
   position: relative;
-  width: 24rpx;
-  height: 24rpx;
+  width: 28rpx;
+  height: 28rpx;
   flex: none;
   box-sizing: border-box;
-  margin-right: 18rpx;
-  border: 4rpx solid #8d98a8;
+  margin-right: 22rpx;
+  border: 4rpx solid #96a0af;
   border-radius: 50%;
 }
 
@@ -472,82 +242,169 @@ onPullDownRefresh(() => {
   position: absolute;
   right: -10rpx;
   bottom: -7rpx;
-  width: 12rpx;
+  width: 13rpx;
   height: 4rpx;
   content: '';
   border-radius: 99rpx;
-  background: #8d98a8;
+  background: #96a0af;
   transform: rotate(45deg);
 }
 
 .search-input {
   min-width: 0;
-  height: 76rpx;
+  height: 92rpx;
   flex: 1;
-  color: #2d394b;
-  font-size: 25rpx;
+  color: #273244;
+  font-size: 26rpx;
+  font-weight: 600;
 }
 
-.search-placeholder { color: #a1a9b4; }
+.search-placeholder { color: #a6aeba; }
 
 .clear-search {
+  position: relative;
+  width: 54rpx;
+  height: 54rpx;
   flex: none;
-  padding: 13rpx 4rpx 13rpx 18rpx;
-  color: #3974e8;
-  font-size: 21rpx;
-  font-weight: 700;
+  margin: 0 -8rpx 0 8rpx;
+  padding: 0;
+  border-radius: 50%;
+  background: #f1f3f6;
 }
+
+.clear-search::after,
+.filter-chip::after,
+.pagination-button::after,
+.empty-button::after { border: 0; }
+
+.clear-search__line {
+  position: absolute;
+  top: 25rpx;
+  left: 16rpx;
+  width: 22rpx;
+  height: 3rpx;
+  border-radius: 99rpx;
+  background: #8c97a7;
+}
+
+.clear-search__line--one { transform: rotate(45deg); }
+.clear-search__line--two { transform: rotate(-45deg); }
 
 .filter-scroll {
   width: 100%;
-  margin-top: 12rpx;
   white-space: nowrap;
+  border-radius: 22rpx;
+  background: #f4f6f8;
 }
 
 .filter-track {
+  min-width: 100%;
   display: inline-flex;
   gap: 8rpx;
-  padding: 2rpx;
+  box-sizing: border-box;
+  padding: 8rpx;
 }
 
 .filter-chip {
-  min-width: 92rpx;
-  height: 60rpx;
+  width: auto;
+  min-width: 104rpx;
+  height: 80rpx;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   box-sizing: border-box;
-  padding: 0 23rpx;
-  color: #7f8998;
+  margin: 0;
+  padding: 0 22rpx;
+  color: #7d8796;
   font-size: 23rpx;
-  font-weight: 680;
+  font-weight: 720;
+  line-height: 80rpx;
   border-radius: 17rpx;
+  background: transparent;
 }
 
 .filter-chip--active {
   color: #1769da;
-  background: #edf4ff;
+  background: #fff;
+  box-shadow: 0 6rpx 18rpx rgba(36, 76, 128, .08);
 }
 
-.result-heading { margin: 36rpx 0 20rpx; }
+.result-meta {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8rpx;
+  margin: 44rpx 2rpx 30rpx;
+  color: #687386;
+}
+
+.result-count {
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.result-page {
+  color: #a0a8b4;
+  font-size: 22rpx;
+  line-height: 1.4;
+}
 
 .problem-grid {
   display: flex;
-  flex-wrap: wrap;
-  gap: 22rpx;
+  flex-direction: column;
+  gap: 44rpx;
 }
 
 .problem-grid__item { width: 100%; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 56rpx;
+}
+
+.pagination-button {
+  width: 84rpx;
+  min-width: 84rpx;
+  height: 84rpx;
+  margin: 0;
+  padding: 0;
+  color: #69758a;
+  font-size: 23rpx;
+  font-weight: 750;
+  line-height: 84rpx;
+  border: 2rpx solid #dfe5ed;
+  border-radius: 20rpx;
+  background: #fff;
+}
+
+.pagination-button--wide {
+  width: auto;
+  padding: 0 24rpx;
+}
+
+.pagination-button--active {
+  color: #fff;
+  border-color: #2674de;
+  background: #2674de;
+}
+
+.pagination-button--disabled { opacity: .38; }
 
 .empty-state {
   display: flex;
   align-items: center;
   flex-direction: column;
-  margin-top: 18rpx;
-  padding: 65rpx 32rpx 60rpx;
+  margin-top: 40rpx;
+  padding: 76rpx 36rpx;
   text-align: center;
   border: 2rpx dashed #d6dde7;
-  border-radius: 30rpx;
+  border-radius: 38rpx;
   background: rgba(255, 255, 255, .68);
 }
 
@@ -591,7 +448,7 @@ onPullDownRefresh(() => {
 .empty-line--two { bottom: 0; width: 75rpx; }
 
 .empty-title {
-  margin-top: 10rpx;
+  margin-top: 18rpx;
   color: #2b3749;
   font-size: 31rpx;
   font-weight: 760;
@@ -605,28 +462,25 @@ onPullDownRefresh(() => {
 }
 
 .empty-button {
-  height: 72rpx;
-  margin: 26rpx 0 0;
-  padding: 0 28rpx;
+  height: 76rpx;
+  margin: 28rpx 0 0;
+  padding: 0 30rpx;
   color: #fff;
   font-size: 24rpx;
   font-weight: 750;
-  line-height: 72rpx;
-  border-radius: 18rpx;
+  line-height: 76rpx;
+  border-radius: 20rpx;
   background: #3974e8;
   box-shadow: 0 10rpx 22rpx rgba(57, 116, 232, .19);
 }
 
-.empty-button::after { border: 0; }
 .empty-button--pressed { opacity: .86; }
-
 .page-bottom-space { height: calc(150rpx + env(safe-area-inset-bottom)); }
 
 @media (min-width: 768px) {
   .plaza-page { padding-right: 44rpx; padding-left: 44rpx; }
-  .capability-scroll { width: calc(100% + 88rpx); margin-right: -44rpx; margin-left: -44rpx; }
-  .capability-track { padding-right: 44rpx; padding-left: 44rpx; }
-  .capability-card { width: 270rpx; }
-  .problem-grid__item { width: calc(50% - 11rpx); }
+  .result-meta { align-items: center; flex-direction: row; justify-content: space-between; }
+  .problem-grid { flex-flow: row wrap; gap: 32rpx; }
+  .problem-grid__item { width: calc(50% - 16rpx); }
 }
 </style>

@@ -1,3 +1,5 @@
+import webProblems from './web-problems.json'
+
 export type ProblemSubject = 'math' | 'physics' | 'chemistry' | 'worksheet'
 
 export type ProblemVisual = 'function' | 'geometry' | 'force' | 'molecule' | 'worksheet'
@@ -8,6 +10,8 @@ export type ProblemArtworkId =
   | 'chemistry-ethanol'
   | 'math-functions'
   | 'math-conic-sections'
+  | 'math-permutations-combinations'
+  | 'math-derivatives'
   | 'physics-kinematics'
   | 'chemistry-equilibrium'
   | 'worksheet-quadratic'
@@ -28,6 +32,9 @@ export interface ProblemPreview {
   visual: ProblemVisual
   artwork: ProblemArtworkId
   featured?: boolean
+  webId?: string
+  thumbnailPath?: string
+  stepCount?: number
 }
 
 export const SUBJECT_NAMES: Record<ProblemSubject, string> = {
@@ -43,14 +50,16 @@ export const PROBLEM_ARTWORK_SRC: Record<ProblemArtworkId, string> = {
   'chemistry-ethanol': '/static/plaza/chemistry-ethanol.webp',
   'math-functions': '/static/plaza/math-functions.webp',
   'math-conic-sections': '/static/plaza/math-conic-sections.webp',
+  'math-permutations-combinations': '/static/plaza/math-permutations-combinations.webp',
+  'math-derivatives': '/static/plaza/math-derivatives.webp',
   'physics-kinematics': '/static/plaza/physics-kinematics.webp',
   'chemistry-equilibrium': '/static/plaza/chemistry-equilibrium.webp',
   'worksheet-quadratic': '/static/plaza/worksheet-quadratic.webp',
   'physics-electromagnetism': '/static/plaza/physics-electromagnetism.webp',
 }
 
-export const resolveProblemArtwork = (problem: Pick<ProblemPreview, 'artwork'>) =>
-  PROBLEM_ARTWORK_SRC[problem.artwork]
+export const resolveProblemArtwork = (problem: Pick<ProblemPreview, 'artwork' | 'thumbnailPath'>) =>
+  problem.thumbnailPath || PROBLEM_ARTWORK_SRC[problem.artwork]
 
 export const problemSubjectName = (subject: ProblemSubject) => SUBJECT_NAMES[subject]
 
@@ -115,128 +124,8 @@ export const SUBJECT_OPTIONS: Array<{
   { value: 'worksheet', label: '题图' },
 ]
 
-export const PUBLIC_PROBLEMS: ProblemPreview[] = [
-  {
-    id: 'math-prism-section',
-    title: '正四棱柱中的截面与二面角',
-    excerpt: '建立空间坐标系，追踪四个分点，逐步验证截面平行关系。',
-    subject: 'math',
-    subjectLabel: '立体几何',
-    grade: '高三',
-    difficulty: '挑战',
-    durationMinutes: 8,
-    accent: '#3974E8',
-    visual: 'geometry',
-    artwork: 'math-solid-geometry',
-    featured: true,
-  },
-  {
-    id: 'physics-incline-force',
-    title: '粗糙斜面 · 静止',
-    excerpt: '分解重力并逐个核对支持力、摩擦力，建立沿斜面的动力学方程。',
-    subject: 'physics',
-    subjectLabel: '受力分析',
-    grade: '高一',
-    difficulty: '入门',
-    durationMinutes: 5,
-    accent: '#E8793D',
-    visual: 'force',
-    artwork: 'physics-force-analysis',
-    featured: true,
-  },
-  {
-    id: 'chemistry-ethanol-oxidation',
-    title: '乙醇的结构与催化氧化',
-    excerpt: '从结构式映射到空间构型，识别羟基并观察碳氧双键的形成。',
-    subject: 'chemistry',
-    subjectLabel: '有机化学',
-    grade: '高一',
-    difficulty: '入门',
-    durationMinutes: 4,
-    accent: '#D85D75',
-    visual: 'molecule',
-    artwork: 'chemistry-ethanol',
-    featured: true,
-  },
-  {
-    id: 'math-function-translation',
-    title: '二次函数图像的平移与零点',
-    excerpt: '拖动顶点观察参数变化，把代数式与函数图像逐步对应起来。',
-    subject: 'math',
-    subjectLabel: '函数',
-    grade: '高一',
-    difficulty: '入门',
-    durationMinutes: 4,
-    accent: '#3974E8',
-    visual: 'function',
-    artwork: 'math-functions',
-  },
-  {
-    id: 'worksheet-quadratic-image',
-    title: '题图中的抛物线与面积最值',
-    excerpt: '先还原题图条件，再联动坐标图定位动点和面积的变化规律。',
-    subject: 'worksheet',
-    subjectLabel: '题图解析',
-    grade: '九年级',
-    difficulty: '进阶',
-    durationMinutes: 7,
-    accent: '#2B9F88',
-    visual: 'worksheet',
-    artwork: 'worksheet-quadratic',
-  },
-  {
-    id: 'physics-projectile-motion',
-    title: '平抛运动的轨迹与速度分解',
-    excerpt: '同步查看水平、竖直分运动，理解位移轨迹与末速度方向。',
-    subject: 'physics',
-    subjectLabel: '运动学',
-    grade: '高一',
-    difficulty: '进阶',
-    durationMinutes: 6,
-    accent: '#E8793D',
-    visual: 'force',
-    artwork: 'physics-kinematics',
-  },
-  {
-    id: 'math-ellipse-tangent',
-    title: '椭圆切线与焦点三角形',
-    excerpt: '联动切点、焦点和切线斜率，用数形结合验证代数推导。',
-    subject: 'math',
-    subjectLabel: '圆锥曲线',
-    grade: '高二',
-    difficulty: '挑战',
-    durationMinutes: 8,
-    accent: '#3974E8',
-    visual: 'function',
-    artwork: 'math-conic-sections',
-  },
-  {
-    id: 'chemistry-equilibrium-shift',
-    title: '浓度变化与化学平衡移动',
-    excerpt: '改变反应物浓度，观察粒子数量和速率曲线如何趋向新平衡。',
-    subject: 'chemistry',
-    subjectLabel: '反应平衡原理',
-    grade: '高二',
-    difficulty: '进阶',
-    durationMinutes: 6,
-    accent: '#D85D75',
-    visual: 'molecule',
-    artwork: 'chemistry-equilibrium',
-  },
-  {
-    id: 'worksheet-circuit-image',
-    title: '电路题图中的动态电表示数',
-    excerpt: '识别滑动变阻器接法，沿电流路径分析电表示数变化。',
-    subject: 'worksheet',
-    subjectLabel: '题图解析',
-    grade: '九年级',
-    difficulty: '进阶',
-    durationMinutes: 7,
-    accent: '#2B9F88',
-    visual: 'worksheet',
-    artwork: 'physics-electromagnetism',
-  },
-]
+// Generated from the Web public catalogue; do not substitute shared templates.
+export const PUBLIC_PROBLEMS = webProblems as ProblemPreview[]
 
 export const FEATURED_PROBLEMS = PUBLIC_PROBLEMS.filter((problem) => problem.featured)
 
@@ -372,6 +261,26 @@ export const getRecentProblemRecords = (): RecentProblemRecord[] => {
   }
 }
 
+export const deleteProblemRecord = (problemId: string) => {
+  const localDrafts = getLocalProblemDrafts().filter((problem) => problem.id !== problemId)
+  const savedIds = getSavedProblemIds().filter((id) => id !== problemId)
+  const recentRecords = getRecentProblemRecords().filter((record) => record.id !== problemId)
+
+  try {
+    uni.setStorageSync(STORAGE_KEYS.localProblems, localDrafts)
+    uni.setStorageSync(STORAGE_KEYS.savedProblems, savedIds)
+    uni.setStorageSync(STORAGE_KEYS.recentProblems, recentRecords)
+  } catch {
+    // Keep the in-memory page usable even if local storage is unavailable.
+  }
+
+  return {
+    localProblems: localDrafts.map(localDraftToPreview),
+    savedIds,
+    recentRecords,
+  }
+}
+
 export const recordProblemOpen = (
   problemId: string,
   openedAt = new Date().toISOString(),
@@ -395,7 +304,8 @@ export const buildSolverUrl = (problem: ProblemPreview): string => {
     `title=${encodeURIComponent(problem.title)}`,
     `subject=${encodeURIComponent(problem.subject)}`,
   ].join('&')
-  return `/subpackages/solver/index?${query}`
+  const page = problem.webId ? 'catalog' : 'solver'
+  return `/subpackages/${page}/index?${query}`
 }
 
 export const formatOpenedAt = (openedAt: string): string => {

@@ -1,9 +1,34 @@
+<script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue'
+
+const activeScene = ref(0)
+const sceneImages = [
+  '/static/hero-scene-math.png',
+  '/static/hero-scene-physics.png',
+  '/static/hero-scene-chemistry.png',
+]
+let fallbackTimer: ReturnType<typeof setInterval> | undefined
+
+const startFallbackAnimation = () => {
+  if (fallbackTimer) clearInterval(fallbackTimer)
+  activeScene.value = 0
+  fallbackTimer = setInterval(() => {
+    activeScene.value = (activeScene.value + 1) % 3
+  }, 2300)
+}
+
+onMounted(startFallbackAnimation)
+onUnmounted(() => {
+  if (fallbackTimer) clearInterval(fallbackTimer)
+})
+</script>
+
 <template>
   <view class="home-hero">
     <view class="brand-row">
       <image
         class="brand-logo"
-        src="/static/prism-logo.png"
+        src="/static/prism-brand.png"
         mode="aspectFit"
         aria-hidden="true"
       />
@@ -13,7 +38,7 @@
       </view>
     </view>
 
-    <view class="hero-scene" aria-label="题目卡片与二次函数图解">
+    <view class="hero-scene" aria-label="指针依次选择数学、物理与化学题目并切换对应图解的演示动画">
       <view class="notebook">
         <view class="notebook__page" />
         <view class="notebook__tabs">
@@ -22,38 +47,39 @@
           <view class="notebook__tab notebook__tab--gray" />
         </view>
 
-        <view class="note-card note-card--math">
+        <view :class="['note-card', 'note-card--math', { 'note-card--active': activeScene === 0 }]">
           <text class="note-card__title">数学 · 二次函数</text>
           <text class="note-card__body">已知 y = (x − 2)² − 1</text>
           <text class="note-card__body">求顶点、对称轴和零点</text>
         </view>
 
-        <view class="note-card note-card--physics">
+        <view :class="['note-card', 'note-card--physics', { 'note-card--active': activeScene === 1 }]">
           <text class="note-card__title">物理 · 斜面受力</text>
           <text class="note-card__body">m = 2 kg，θ = 30°</text>
           <text class="note-card__body">画出受力，判断摩擦方向</text>
         </view>
 
-        <view class="note-card note-card--chemistry">
+        <view :class="['note-card', 'note-card--chemistry', { 'note-card--active': activeScene === 2 }]">
           <text class="note-card__title">化学 · 分子结构</text>
           <text class="note-card__body">CH₃CH₂OH</text>
           <text class="note-card__body">观察原子连接与空间构型</text>
         </view>
+
+        <view :class="['demo-cursor', `demo-cursor--${activeScene}`]">
+          <view class="demo-cursor__arrow" />
+          <view class="demo-cursor__pulse" />
+        </view>
       </view>
 
       <view class="graph-board">
-        <view class="graph-grid" />
-        <view class="graph-axis graph-axis--y" />
-        <view class="graph-axis graph-axis--x" />
-        <view class="graph-arrow graph-arrow--y" />
-        <view class="graph-arrow graph-arrow--x" />
-        <view class="graph-dash graph-dash--left" />
-        <view class="graph-dash graph-dash--right" />
-        <view class="graph-curve graph-curve--left" />
-        <view class="graph-curve graph-curve--right" />
-        <view class="graph-point graph-point--zero-left" />
-        <view class="graph-point graph-point--zero-right" />
-        <view class="graph-point graph-point--vertex" />
+        <image
+          v-for="(sceneImage, sceneIndex) in sceneImages"
+          :key="sceneImage"
+          :class="['graph-scene-image', { 'graph-scene-image--active': activeScene === sceneIndex }]"
+          :src="sceneImage"
+          mode="aspectFit"
+          aria-hidden="true"
+        />
       </view>
     </view>
 
@@ -69,21 +95,21 @@
 .brand-row {
   display: flex;
   align-items: center;
-  min-height: 72rpx;
+  min-height: 80rpx;
 }
 
 .brand-logo {
-  width: 64rpx;
-  height: 64rpx;
-  flex: 0 0 64rpx;
-  border-radius: 16rpx;
+  width: 80rpx;
+  height: 80rpx;
+  flex: 0 0 80rpx;
+  border-radius: 20rpx;
 }
 
 .brand-copy {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  margin-left: 16rpx;
+  margin-left: 18rpx;
 }
 
 .brand-name {
@@ -113,6 +139,8 @@
   position: relative;
   width: 46%;
   height: 100%;
+  transform: translateY(15rpx) scale(.84);
+  transform-origin: top left;
 }
 
 .notebook__page {
@@ -155,7 +183,10 @@
   border-radius: 16rpx;
   background: #ffffff;
   box-sizing: border-box;
+  transition: transform 360ms ease, box-shadow 360ms ease;
 }
+
+.note-card--active { transform: translateX(7rpx) scale(1.025); }
 
 .note-card--math {
   top: 32rpx;
@@ -163,16 +194,65 @@
   box-shadow: 0 8rpx 18rpx rgba(61, 126, 232, 0.12);
 }
 
+.note-card--math.note-card--active { box-shadow: 0 10rpx 24rpx rgba(61, 126, 232, .25); }
+
 .note-card--physics {
   top: 128rpx;
   border: 3rpx solid #2f9f88;
   box-shadow: 0 8rpx 18rpx rgba(47, 159, 136, 0.12);
 }
 
+.note-card--physics.note-card--active { box-shadow: 0 10rpx 24rpx rgba(47, 159, 136, .25); }
+
 .note-card--chemistry {
   top: 236rpx;
   border: 3rpx solid #e25b4c;
   box-shadow: 0 8rpx 18rpx rgba(226, 91, 76, 0.12);
+}
+
+.note-card--chemistry.note-card--active { box-shadow: 0 10rpx 24rpx rgba(226, 91, 76, .25); }
+
+.demo-cursor {
+  position: absolute;
+  z-index: 8;
+  left: 126rpx;
+  top: 74rpx;
+  width: 34rpx;
+  height: 42rpx;
+  transition: top 460ms cubic-bezier(.22, .9, .35, 1), left 460ms cubic-bezier(.22, .9, .35, 1);
+}
+
+.demo-cursor--1 { top: 172rpx; left: 116rpx; }
+.demo-cursor--2 { top: 278rpx; left: 130rpx; }
+
+.demo-cursor__arrow {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-top: 24rpx solid #1f2937;
+  border-right: 16rpx solid transparent;
+  filter: drop-shadow(0 3rpx 3rpx rgba(255, 255, 255, .9));
+  transform: rotate(-18deg);
+}
+
+.demo-cursor__pulse {
+  position: absolute;
+  top: 12rpx;
+  left: 4rpx;
+  width: 24rpx;
+  height: 24rpx;
+  box-sizing: border-box;
+  border: 3rpx solid rgba(38, 116, 222, .52);
+  border-radius: 50%;
+  animation: cursor-pulse 1150ms ease-out infinite;
+}
+
+@keyframes cursor-pulse {
+  0% { opacity: .85; transform: scale(.35); }
+  75%, 100% { opacity: 0; transform: scale(1.45); }
 }
 
 .note-card__title {
@@ -200,141 +280,25 @@
   width: 54%;
   height: 100%;
   overflow: hidden;
-  border: 3rpx solid #2d4563;
-  border-radius: 22rpx;
-  background: #ffffff;
-  box-shadow: 0 12rpx 28rpx rgba(45, 69, 99, 0.08);
+  background: transparent;
 }
 
-.graph-grid {
+.graph-scene-image {
   position: absolute;
-  top: 18rpx;
-  right: 18rpx;
-  bottom: 18rpx;
-  left: 18rpx;
-  opacity: 0.9;
-  background-image: linear-gradient(#e7edf5 2rpx, transparent 2rpx), linear-gradient(90deg, #e7edf5 2rpx, transparent 2rpx);
-  background-size: 28rpx 28rpx;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transform: scale(.985);
+  transition: opacity 320ms ease, transform 420ms ease;
 }
 
-.graph-axis {
-  position: absolute;
-  z-index: 1;
-  background: #1f2b3d;
-}
-
-.graph-axis--x {
-  left: 28rpx;
-  right: 36rpx;
-  top: 186rpx;
-  height: 3rpx;
-}
-
-.graph-axis--y {
-  left: 176rpx;
-  top: 28rpx;
-  bottom: 36rpx;
-  width: 3rpx;
-}
-
-.graph-arrow {
-  position: absolute;
-  z-index: 2;
-  width: 12rpx;
-  height: 12rpx;
-  border: solid #1f2b3d;
-  box-sizing: border-box;
-}
-
-.graph-arrow--y {
-  left: 171rpx;
-  top: 24rpx;
-  border-width: 3rpx 3rpx 0 0;
-  transform: rotate(-45deg);
-}
-
-.graph-arrow--x {
-  right: 28rpx;
-  top: 181rpx;
-  border-width: 3rpx 3rpx 0 0;
-  transform: rotate(45deg);
-}
-
-.graph-dash,
-.graph-curve {
-  position: absolute;
-  z-index: 2;
-  box-sizing: border-box;
-  border-radius: 0 0 55% 55%;
-}
-
-.graph-dash {
-  top: 68rpx;
-  width: 78rpx;
-  height: 100rpx;
-  border: dashed #94a3b8;
-  border-width: 0 4rpx 4rpx;
-}
-
-.graph-dash--left {
-  left: 102rpx;
-  transform: rotate(18deg);
-}
-
-.graph-dash--right {
-  left: 176rpx;
-  transform: rotate(-18deg);
-}
-
-.graph-curve {
-  top: 84rpx;
-  width: 92rpx;
-  height: 128rpx;
-  border: solid #3474d9;
-  border-width: 0 5rpx 5rpx;
-}
-
-.graph-curve--left {
-  left: 88rpx;
-  transform: rotate(16deg);
-}
-
-.graph-curve--right {
-  left: 176rpx;
-  transform: rotate(-16deg);
-}
-
-.graph-point {
-  position: absolute;
-  z-index: 3;
-  width: 16rpx;
-  height: 16rpx;
-  border: 4rpx solid #ffffff;
-  border-radius: 50%;
-  box-sizing: border-box;
-}
-
-.graph-point--zero-left,
-.graph-point--zero-right {
-  background: #ffffff;
-  border: 4rpx solid #3474d9;
-}
-
-.graph-point--zero-left {
-  left: 118rpx;
-  top: 179rpx;
-}
-
-.graph-point--zero-right {
-  left: 226rpx;
-  top: 179rpx;
-}
-
-.graph-point--vertex {
-  left: 168rpx;
-  top: 214rpx;
-  background: #e87461;
-  border-color: #ffffff;
+.graph-scene-image--active {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .hero-title {

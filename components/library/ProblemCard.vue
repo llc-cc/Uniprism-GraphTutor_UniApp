@@ -11,12 +11,14 @@ const props = withDefaults(defineProps<{
   problem: ProblemPreview
   saved?: boolean
   showSave?: boolean
+  showDelete?: boolean
   showDifficulty?: boolean
   openedLabel?: string
   demo?: boolean
 }>(), {
   saved: false,
   showSave: true,
+  showDelete: false,
   showDifficulty: true,
   openedLabel: '',
   demo: false,
@@ -25,6 +27,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   open: [problem: ProblemPreview]
   'toggle-save': [problem: ProblemPreview]
+  remove: [problem: ProblemPreview]
 }>()
 
 const artworkSrc = computed(() => resolveProblemArtwork(props.problem))
@@ -33,6 +36,7 @@ const difficulty = computed(() => difficultyPresentation(props.problem.difficult
 
 const openProblem = () => emit('open', props.problem)
 const toggleSave = () => emit('toggle-save', props.problem)
+const removeProblem = () => emit('remove', props.problem)
 </script>
 
 <template>
@@ -65,6 +69,21 @@ const toggleSave = () => emit('toggle-save', props.problem)
         @tap.stop="toggleSave"
       >
         <view class="bookmark-mark" />
+      </button>
+      <button
+        v-if="showDelete"
+        :class="['delete-button', { 'delete-button--solo': !showSave }]"
+        hover-class="delete-button--pressed"
+        :aria-label="`删除记录：${problem.title}`"
+        @tap.stop="removeProblem"
+      >
+        <view class="trash-mark">
+          <view class="trash-mark__lid" />
+          <view class="trash-mark__body">
+            <view class="trash-mark__slot" />
+            <view class="trash-mark__slot" />
+          </view>
+        </view>
       </button>
     </view>
 
@@ -232,6 +251,81 @@ const toggleSave = () => emit('toggle-save', props.problem)
 .save-button--active {
   border-color: #2674de;
   background: #2674de;
+}
+
+.delete-button {
+  position: absolute;
+  z-index: 3;
+  top: 28rpx;
+  right: 116rpx;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  color: #9a6874;
+  border: 2rpx solid rgba(185, 123, 138, .24);
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 10rpx 28rpx rgba(35, 47, 63, .09);
+}
+
+.delete-button--solo { right: 28rpx; }
+.delete-button::after { border: 0; }
+.delete-button--pressed { transform: scale(.92); }
+
+.trash-mark {
+  position: relative;
+  width: 28rpx;
+  height: 32rpx;
+}
+
+.trash-mark__lid {
+  position: absolute;
+  top: 3rpx;
+  left: 2rpx;
+  width: 24rpx;
+  height: 4rpx;
+  border-radius: 99rpx;
+  background: currentColor;
+}
+
+.trash-mark__lid::before {
+  position: absolute;
+  top: -6rpx;
+  left: 8rpx;
+  width: 9rpx;
+  height: 6rpx;
+  box-sizing: border-box;
+  content: '';
+  border: 3rpx solid currentColor;
+  border-bottom: 0;
+  border-radius: 4rpx 4rpx 0 0;
+}
+
+.trash-mark__body {
+  position: absolute;
+  top: 10rpx;
+  left: 5rpx;
+  width: 18rpx;
+  height: 20rpx;
+  display: flex;
+  justify-content: center;
+  gap: 4rpx;
+  box-sizing: border-box;
+  padding-top: 5rpx;
+  border: 3rpx solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 5rpx 5rpx;
+}
+
+.trash-mark__slot {
+  width: 2rpx;
+  height: 10rpx;
+  border-radius: 99rpx;
+  background: currentColor;
 }
 
 .bookmark-mark {

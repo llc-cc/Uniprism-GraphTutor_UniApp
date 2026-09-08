@@ -35,6 +35,11 @@
   ],
   "subPackages": [
     {
+      "root": "subpackages/catalog",
+      "name": "catalog",
+      "pages": [{"path": "index", "style": {"navigationStyle": "custom", "disableScroll": true, "backgroundColor": "#F6F8FB"}}]
+    },
+    {
       "root": "subpackages/solver",
       "name": "solver",
       "pages": [
@@ -52,7 +57,7 @@
   "preloadRule": {
     "pages/home/index": {
       "network": "all",
-      "packages": ["solver"]
+      "packages": ["catalog"]
     }
   },
   "tabBar": {

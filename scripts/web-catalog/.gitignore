@@ -1,0 +1,7 @@
+# Local export intermediates and headless browser profiles.
+*.bundle.cjs
+*.json
+*.html
+*.png
+render.js
+chrome*/
